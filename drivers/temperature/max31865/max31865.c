@@ -1,7 +1,7 @@
 /***************************************************************************//**
  *   @file   max31865.c
  *   @brief  Implementation of MAX31865 Driver.
- *   @author 
+ *   @author
 ********************************************************************************
  * Copyright 2022(c) Analog Devices, Inc.
  *
@@ -125,6 +125,7 @@ int max31865_read_raw(struct max31865_dev *device, uint8_t *val)
  * @brief Write raw register value
  * @param device - MAX31865 descriptor
  * @param val - register value
+ * @param val2 - data to write in register
  * @return 0 in case of success, negative error code otherwise
  */
 int max31865_write_raw(struct max31865_dev *device, uint8_t *val, uint8_t *val2)
@@ -163,7 +164,7 @@ void max31865_clear_fault(struct max31865_dev *device)
 	faultReg &= ~0x2C;
 	faultReg |= 0x02;
 	uint8_t clrReg = 0x00;
-	max31865_write_raw(device, &faultReg, &clrReg);
+	max31865_write_raw(device, &clrReg, &faultReg);
 }
 
 /**
@@ -177,11 +178,11 @@ void max31865_enable_bias(struct max31865_dev *device, bool b)
 	uint8_t biasReg = 0x00;
 	max31865_read_raw(device, &confReg);
 	if (b) {
-		biasReg |= 0x80;	
+		confReg |= 0x80;
 	} else {
-		biasReg &= ~0x80;
+		confReg &= ~0x80;
 	}
-	max31865_write_raw(device, &confReg, &biasReg);
+	max31865_write_raw(device, &biasReg, &confReg);
 }
 
 /**
@@ -195,11 +196,11 @@ void max31865_auto_convert(struct max31865_dev *device, bool b)
 	uint8_t convReg = 0x00;
 	max31865_read_raw(device, &confReg);
 	if (b) {
-		convReg |= 0x40;
+		confReg |= 0x40;
 	} else {
-		convReg &= ~0x40;
+		confReg &= ~0x40;
 	}
-	max31865_write_raw(device, &confReg, &convReg);
+	max31865_write_raw(device, &convReg, &confReg);
 }
 
 /**
@@ -213,11 +214,11 @@ void max31865_enable_50Hz(struct max31865_dev *device, bool b)
 	uint8_t filReg = 0x00;
 	max31865_read_raw(device, &confReg);
 	if (b) {
-		filReg |= 0x01;
+		confReg |= 0x01;
 	} else {
-		filReg &= ~0x01;
+		confReg &= ~0x01;
 	}
-	max31865_write_raw(device, &confReg, &filReg);
+	max31865_write_raw(device, &filReg, &confReg);
 }
 
 /**
@@ -227,12 +228,20 @@ void max31865_enable_50Hz(struct max31865_dev *device, bool b)
  * @param lower raw lower threshold
  * @param upper raw upper threshold
  */
-void max31865_set_threshold(struct max31865_dev *device, uint16_t *lower, uint16_t *upper)
+void max31865_set_threshold(struct max31865_dev *device, uint16_t *lower,
+			    		uint16_t *upper)
 {
-	max31865_write_raw(device, MAX31865_LFAULTLSB_REG, *lower & 0xFF);
-	max31865_write_raw(device, MAX31865_LFAULTMSB_REG, *lower >> 8);
-	max31865_write_raw(device, MAX31865_HFAULTLSB_REG, *upper & 0xFF);
-	max31865_write_raw(device, MAX31865_HFAULTMSB_REG, *upper >> 8);
+	uint8_t lsblow = 0x06;
+	uint8_t msblow = 0x05;
+	uint8_t lsbhigh = 0x04;
+	uint8_t msbhigh = 0x03;
+	uint16_t lowsb = *lower & 0xFF;
+	uint16_t upsb = *upper  >> 8;
+
+	max31865_write_raw(device, *lsblow, ((uint8_t)lowsb));
+	max31865_write_raw(device, *msblow, ((uint8_t)lowsb));
+	max31865_write_raw(device, *lsbhigh, ((uint8_t)upsb));
+	max31865_write_raw(device, *msbhigh, ((uint8_t)upsb));
 }
 
 /**
@@ -246,7 +255,7 @@ uint16_t max31865_get_lower_threshold(struct max31865_dev *device)
 	uint8_t lowlsb = 0x06;
 	max31865_read_raw(device, &lowmsb);
 	max31865_read_raw(device, &lowlsb);
-	
+
 	uint16_t lowthresh = 0x00;
 
 	lowthresh = (((uint16_t)lowmsb << 8) | (uint16_t)lowlsb);
@@ -265,7 +274,7 @@ uint16_t max31865_get_upper_threshold(struct max31865_dev *device)
 	uint8_t highlsb = 0x04;
 	max31865_read_raw(device, &highmsb);
 	max31865_read_raw(device, &highlsb);
-	
+
 	uint16_t highthresh = 0x00;
 
 	highthresh = (((uint16_t)highmsb << 8) | (uint16_t)highlsb);
@@ -274,18 +283,17 @@ uint16_t max31865_get_upper_threshold(struct max31865_dev *device)
 }
 
 /**
- * @brief RTD setup options for MAX31865_2WIRE, MAX31865_3WIRE, MAX31865_4WIRE 
+ * @brief RTD setup options for MAX31865_2WIRE, MAX31865_3WIRE, MAX31865_4WIRE
  * @param device MAX31865 descriptor
  * @param wires The number of wires in enum format
  */
 void max31865_set_wires(struct max31865_dev *device)
-{	max31865_numwires_t wires;
+{
+	max31865_numwires_t wires;
 	uint8_t wireReg = 0x00;
-	if (wires == MAX31865_3WIRE)
-	{
+	if (wires == MAX31865_3WIRE) {
 		wireReg |= 0x10;
-	} else
-	{
+	} else {
 		wireReg &= ~0x10;
 	}
 	max31865_write_raw(device, &wireReg, &wires);
@@ -305,11 +313,9 @@ uint16_t max31865_read_RTD(struct max31865_dev *device)
 	uint8_t confReg = 0x00;
 	uint8_t rtdReg = 0x00;
 	max31865_read_raw(device, &confReg);
-	if (confReg = 0x00)
-	{
+	if (confReg = 0x00) {
 		rtdReg |= 0x20;
-	} else 
-	{
+	} else {
 		rtdReg &= ~0x20;
 	}
 	max31865_write_raw(device, &confReg, &rtdReg);

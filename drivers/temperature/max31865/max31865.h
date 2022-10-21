@@ -1,7 +1,7 @@
 /***************************************************************************//**
  *   @file   max31865.c
  *   @brief  Implementation of MAX31865 Driver.
- *   @author 
+ *   @author
 ********************************************************************************
  * Copyright 2022(c) Analog Devices, Inc.
  *
@@ -82,9 +82,9 @@
  * @brief Max31865 wires setup for RTD sensor
  */
 typedef enum max31865_numwires {
-  MAX31865_2WIRE = 0,
-  MAX31865_3WIRE = 1,
-  MAX31865_4WIRE = 0
+	MAX31865_2WIRE = 0,
+	MAX31865_3WIRE = 1,
+	MAX31865_4WIRE = 0
 } max31865_numwires_t;
 
 /**
@@ -92,8 +92,6 @@ typedef enum max31865_numwires {
  */
 struct max31865_init_param {
 	struct no_os_spi_init_param spi_init;
-
-  
 };
 
 /**
