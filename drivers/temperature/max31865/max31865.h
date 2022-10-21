@@ -78,9 +78,6 @@
 #define MAX31865_FAULT_RTDINLOW 0x08
 #define MAX31865_FAULT_OVUV 0x04
 
-#define RTD_A 3.9083e-3
-#define RTD_B -5.775e-7
-
 /**
  * @brief Max31865 wires setup for RTD sensor
  */
@@ -95,6 +92,8 @@ typedef enum max31865_numwires {
  */
 struct max31865_init_param {
 	struct no_os_spi_init_param spi_init;
+
+  
 };
 
 /**
