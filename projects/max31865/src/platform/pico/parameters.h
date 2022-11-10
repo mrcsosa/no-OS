@@ -1,7 +1,8 @@
 /***************************************************************************//**
- *   @file   max31865.c
- *   @brief  Implementation of MAX31865 Driver.
- *   @author 
+ *   @file   parameters.h
+ *   @brief  Definitions specific to pico platform used by eval-adxl355-pmdz
+ *           project.
+ *   @author RBolboac (ramona.bolboaca@analog.com)
 ********************************************************************************
  * Copyright 2022(c) Analog Devices, Inc.
  *
@@ -36,110 +37,54 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
-
-#ifndef __MAX31855_H__
-#define __MAX31855_H__
+#ifndef __PARAMETERS_H__
+#define __PARAMETERS_H__
 
 /******************************************************************************/
 /***************************** Include Files **********************************/
 /******************************************************************************/
-
-#include <stdint.h>
-#include "no_os_spi.h"
+#include "common_data.h"
 #include "no_os_util.h"
+#include "pico_uart.h"
+#include "pico_spi.h"
+#include "pico_gpio.h"
+#include "pico_gpio_irq.h"
+#include "pico_irq.h"
+#include "pico_timer.h"
 
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
 
-#define MAX31865_CONFIG_REG 0x00
-#define MAX31865_CONFIG_BIAS 0x80
-#define MAX31865_CONFIG_MODEAUTO 0x40
-#define MAX31865_CONFIG_MODEOFF 0x00
-#define MAX31865_CONFIG_1SHOT 0x20
-#define MAX31865_CONFIG_3WIRE 0x10
-#define MAX31865_CONFIG_24WIRE 0x00
-#define MAX31865_CONFIG_FAULTSTAT 0x02
-#define MAX31865_CONFIG_FILT50HZ 0x01
-#define MAX31865_CONFIG_FILT60HZ 0x00
+#define UART_DEVICE_ID  0
+#define UART_BAUDRATE   115200
+#define UART_IRQ_ID     20
+#define UART_EXTRA      &adxl355_uart_extra_ip
 
-#define MAX31865_RTDMSB_REG 0x01
-#define MAX31865_RTDLSB_REG 0x02
-#define MAX31865_HFAULTMSB_REG 0x03
-#define MAX31865_HFAULTLSB_REG 0x04
-#define MAX31865_LFAULTMSB_REG 0x05
-#define MAX31865_LFAULTLSB_REG 0x06
-#define MAX31865_FAULTSTAT_REG 0x07
+#define UART_TX_PIN     UART0_TX_GP0
+#define UART_RX_PIN     UART0_RX_GP1
 
-#define MAX31865_FAULT_HIGHTHRESH 0x80
-#define MAX31865_FAULT_LOWTHRESH 0x40
-#define MAX31865_FAULT_REFINLOW 0x20
-#define MAX31865_FAULT_REFINHIGH 0x10
-#define MAX31865_FAULT_RTDINLOW 0x08
-#define MAX31865_FAULT_OVUV 0x04
+#define SPI_DEVICE_ID   0
+#define SPI_BAUDRATE    1000000
+#define SPI_CS          SPI0_CS_GP17
+#define SPI_OPS         &pico_spi_ops
+#define SPI_EXTRA       &adxl355_spi_extra_ip
 
-#define RTD_A 3.9083e-3
-#define RTD_B -5.775e-7
+extern struct pico_spi_init_param adxl355_spi_extra_ip;
+extern struct pico_uart_init_param adxl355_uart_extra_ip;
 
-typedef enum max31865_numwires {
-  MAX31865_2WIRE = 0,
-  MAX31865_3WIRE = 1,
-  MAX31865_4WIRE = 0
-} max31865_numwires_t;
+#define GPIO_DRDY_PIN_NUM   20
+#define GPIO_DRDY_PORT_NUM  0 /* Not used for pico platform */
+#define GPIO_OPS            &pico_gpio_ops
+#define GPIO_EXTRA          NULL /* Not used for pico platform */
 
+#ifdef IIO_TRIGGER_EXAMPLE
+#define ADXL355_GPIO_TRIG_IRQ_ID     GPIO_DRDY_PIN_NUM
+#define ADXL355_GPIO_CB_HANDLE       NULL /* Not used in pico platform */
 
-struct max31865_init_param {
-	struct no_os_spi_init_param spi_init;
-};
-
-/**
- * @brief MAX31855 descriptor
- */
-struct max31865_dev {
-	struct no_os_spi_desc *comm_desc;
-};
-
-
-/** Device and comm init function */
-int max31865_init(struct max31865_dev **, struct max31865_init_param *);
-
-/** Free resources allocated by the init function */
-int max31865_remove(struct max31865_dev *);
-
-/** Read raw register value */
-int max31865_read_raw(struct max31865_dev *, uint8_t *);
-
-/** Write raw register value */
-int max31865_write_raw(struct max31865_dev *, uint8_t *, uint8_t *);
-
-/** Read fault register value */
-uint8_t max31865_read_fault(struct max31865_dev *);
-
-/** Clear all faults */
-void max31865_clear_fault(struct max31865_dev *);
-
-/** Enable bias */
-void max31865_enable_bias(struct max31865_dev *, bool b);
-
-/** Enable auto-convert */
-void max31865_auto_convert(struct max31865_dev *, bool b);
-
-/** Enable 50Hz filter, default is 60Hz */
-void max31865_enable_50Hz(struct max31865_dev *, bool b);
-
-/** Set threshold **/
-void max31865_set_threshold(struct max31865_dev *, uint16_t *, uint16_t *);
-
-/** Get Lower threshold **/
-uint16_t max31865_get_lower_threshold(struct max31865_dev*);
-
-/** Get Upper threshold **/
-uint16_t max31865_get_upper_threshold(struct max31865_dev*);
-
-/** Set Wires **/
-void max31865_set_wires(struct max31865_dev *);
-
-/** Read RTD **/
-uint16_t max31865_read_RTD(struct max31865_dev *);
-
+#define GPIO_IRQ_ID             GPIO_DRDY_PIN_NUM
+#define GPIO_IRQ_OPS            &pico_gpio_irq_ops
+#define GPIO_IRQ_EXTRA          NULL /* Not used for pico platform */
 #endif
+
+#endif /* __PARAMETERS_H__ */

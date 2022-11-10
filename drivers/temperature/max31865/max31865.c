@@ -238,10 +238,10 @@ void max31865_set_threshold(struct max31865_dev *device, uint16_t *lower,
 	uint16_t lowsb = *lower & 0xFF;
 	uint16_t upsb = *upper  >> 8;
 
-	max31865_write_raw(device, *lsblow, ((uint8_t)lowsb));
-	max31865_write_raw(device, *msblow, ((uint8_t)lowsb));
-	max31865_write_raw(device, *lsbhigh, ((uint8_t)upsb));
-	max31865_write_raw(device, *msbhigh, ((uint8_t)upsb));
+	max31865_write_raw(device, lsblow, ((uint8_t)lowsb));
+	max31865_write_raw(device, msblow, ((uint8_t)lowsb));
+	max31865_write_raw(device, lsbhigh, ((uint8_t)upsb));
+	max31865_write_raw(device, msbhigh, ((uint8_t)upsb));
 }
 
 /**
