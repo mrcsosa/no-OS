@@ -1,7 +1,7 @@
 /***************************************************************************//**
- *   @file   max31865.c
- *   @brief  Implementation of MAX31865 Driver.
- *   @author 
+ *   @file   max31855.c
+ *   @brief  Implementation of MAX31855 Driver.
+ *   @author Ciprian Regus (ciprian.regus@analog.com)
 ********************************************************************************
  * Copyright 2022(c) Analog Devices, Inc.
  *
@@ -97,6 +97,7 @@ struct max31865_init_param {
  */
 struct max31865_dev {
 	struct no_os_spi_desc *comm_desc;
+	// union max31865_fault_sts fault;
 };
 
 
@@ -127,19 +128,16 @@ void max31865_auto_convert(struct max31865_dev *, bool b);
 /** Enable 50Hz filter, default is 60Hz */
 void max31865_enable_50Hz(struct max31865_dev *, bool b);
 
-/** Set threshold **/
 void max31865_set_threshold(struct max31865_dev *, uint16_t *, uint16_t *);
 
-/** Get Lower threshold **/
 uint16_t max31865_get_lower_threshold(struct max31865_dev*);
 
-/** Get Upper threshold **/
 uint16_t max31865_get_upper_threshold(struct max31865_dev*);
 
-/** Set Wires **/
 void max31865_set_wires(struct max31865_dev *);
 
-/** Read RTD **/
 uint16_t max31865_read_RTD(struct max31865_dev *);
+
+
 
 #endif

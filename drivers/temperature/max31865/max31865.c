@@ -1,7 +1,7 @@
 /***************************************************************************//**
- *   @file   max31865.c
+ *   @file   max31855.c
  *   @brief  Implementation of MAX31865 Driver.
- *   @author
+ *   @author Ciprian Regus (ciprian.regus@analog.com)
 ********************************************************************************
  * Copyright 2022(c) Analog Devices, Inc.
  *
@@ -52,13 +52,6 @@
 /************************ Functions Definitions *******************************/
 /******************************************************************************/
 /******************************************************************************/
-
-/**
- * @brief Device and comm init function
- * @param device - MAX31865 descriptor to be initialized
- * @param init_param - Init parameter for descriptor
- * @return 0 in case of success, errno errors otherwise
- */
 int max31865_init(struct max31865_dev **device,
 		  struct max31865_init_param *init_param)
 {
@@ -82,11 +75,7 @@ spi_err:
 	return ret;
 }
 
-/**
- * @brief Remove resources allocated by the init function
- * @param device  - max31865 descriptor
- * @return 0 in case of success, errno errors otherwise
- */
+
 int max31865_remove(struct max31865_dev *device)
 {
 	int ret;
@@ -102,12 +91,7 @@ int max31865_remove(struct max31865_dev *device)
 	return 0;
 }
 
-/**
- * @brief Read raw register value
- * @param device - MAX31865 descriptor
- * @param val - register value
- * @return 0 in case of success, negative error code otherwise
- */
+
 int max31865_read_raw(struct max31865_dev *device, uint8_t *val)
 {
 	int ret;
@@ -121,13 +105,7 @@ int max31865_read_raw(struct max31865_dev *device, uint8_t *val)
 	return 0;
 }
 
-/**
- * @brief Write raw register value
- * @param device - MAX31865 descriptor
- * @param val - register value
- * @param val2 - data to write in register
- * @return 0 in case of success, negative error code otherwise
- */
+
 int max31865_write_raw(struct max31865_dev *device, uint8_t *val, uint8_t *val2)
 {
 	int ret;
@@ -141,11 +119,6 @@ int max31865_write_raw(struct max31865_dev *device, uint8_t *val, uint8_t *val2)
 	return 0;
 }
 
-/**
- * @brief Read the raw 8-bit FAULTSTAT register
- * @param device MAX31865 descriptor
- * @return The raw unsigned 8-bit FAULT status register
- */
 uint8_t max31865_read_fault(struct max31865_dev *device)
 {
 	uint8_t faultReg = 0x07;
@@ -153,10 +126,6 @@ uint8_t max31865_read_fault(struct max31865_dev *device)
 	return faultReg;
 }
 
-/**
- * @brief Clear all faults in FAULTSTAT
- * @param device MAX31865 descriptor
- */
 void max31865_clear_fault(struct max31865_dev *device)
 {
 	uint8_t faultReg= 0x00;
@@ -164,98 +133,65 @@ void max31865_clear_fault(struct max31865_dev *device)
 	faultReg &= ~0x2C;
 	faultReg |= 0x02;
 	uint8_t clrReg = 0x00;
-	max31865_write_raw(device, &clrReg, &faultReg);
+	max31865_write_raw(device, &faultReg, &clrReg);
 }
 
-/**
- * @brief Enable the bias voltage on the RTD sensor
- * @param device MAX31865 descriptor
- * @param b If true bias is enabled, else disabled
- */
 void max31865_enable_bias(struct max31865_dev *device, bool b)
 {
 	uint8_t confReg = 0x00;
 	uint8_t biasReg = 0x00;
 	max31865_read_raw(device, &confReg);
 	if (b) {
-		confReg |= 0x80;
+		biasReg |= 0x80;	
 	} else {
-		confReg &= ~0x80;
+		biasReg &= ~0x80;
 	}
-	max31865_write_raw(device, &biasReg, &confReg);
+	max31865_write_raw(device, &confReg, &biasReg);
 }
 
-/**
- * @brief Option for continuous conversions between 50/60 Hz
- * @param device MAX31865 descriptor
- * @param b If true, auto conversion is enabled
- */
 void max31865_auto_convert(struct max31865_dev *device, bool b)
 {
 	uint8_t confReg = 0x00;
 	uint8_t convReg = 0x00;
 	max31865_read_raw(device, &confReg);
 	if (b) {
-		confReg |= 0x40;
+		convReg |= 0x40;
 	} else {
-		confReg &= ~0x40;
+		convReg &= ~0x40;
 	}
-	max31865_write_raw(device, &convReg, &confReg);
+	max31865_write_raw(device, &confReg, &convReg);
 }
 
-/**
- * @brief Option for 50Hz or 60Hz noise filters
- * @param device MAX31865 descriptor
- * @param b If true, 50Hz noise is filtered, else 60Hz(default)
- */
 void max31865_enable_50Hz(struct max31865_dev *device, bool b)
 {
 	uint8_t confReg = 0x00;
 	uint8_t filReg = 0x00;
 	max31865_read_raw(device, &confReg);
 	if (b) {
-		confReg |= 0x01;
+		filReg |= 0x01;
 	} else {
-		confReg &= ~0x01;
+		filReg &= ~0x01;
 	}
-	max31865_write_raw(device, &filReg, &confReg);
+	max31865_write_raw(device, &confReg, &filReg);
 }
 
-/**
- * @brief Write the lower and upper values into the threshold fault
-    register to values as returned by readRTD()
- * @param device MAX31865 descriptor
- * @param lower raw lower threshold
- * @param upper raw upper threshold
- */
-void max31865_set_threshold(struct max31865_dev *device, uint16_t *lower,
-			    		uint16_t *upper)
-{
-	uint8_t lsblow = 0x06;
-	uint8_t msblow = 0x05;
-	uint8_t lsbhigh = 0x04;
-	uint8_t msbhigh = 0x03;
-	uint16_t lowsb = *lower & 0xFF;
-	uint16_t upsb = *upper  >> 8;
 
-	max31865_write_raw(device, lsblow, ((uint8_t)lowsb));
-	max31865_write_raw(device, msblow, ((uint8_t)lowsb));
-	max31865_write_raw(device, lsbhigh, ((uint8_t)upsb));
-	max31865_write_raw(device, msbhigh, ((uint8_t)upsb));
+void max31865_set_threshold(struct max31865_dev *device, uint16_t *lower, uint16_t *upper)
+ {
+	max31865_write_raw(MAX31865_LFAULTLSB_REG, lower & 0xFF);
+  max31865_write_raw(MAX31865_LFAULTMSB_REG, lower >> 8);
+  max31865_write_raw(MAX31865_HFAULTLSB_REG, upper & 0xFF);
+ max31865_write_raw(MAX31865_HFAULTMSB_REG, upper >> 8);
 }
 
-/**
- * @brief Read the raw 16-bit lower threshold value
- * @param device MAX31865 descriptor
- * @return The raw unsigned 16-bit value, NOT temperature value
- */
+
 uint16_t max31865_get_lower_threshold(struct max31865_dev *device)
 {
 	uint8_t lowmsb = 0x05;
 	uint8_t lowlsb = 0x06;
 	max31865_read_raw(device, &lowmsb);
 	max31865_read_raw(device, &lowlsb);
-
+	
 	uint16_t lowthresh = 0x00;
 
 	lowthresh = (((uint16_t)lowmsb << 8) | (uint16_t)lowlsb);
@@ -263,18 +199,13 @@ uint16_t max31865_get_lower_threshold(struct max31865_dev *device)
 	return lowthresh;
 }
 
-/**
- * @brief Read the raw 16-bit upper threshold value
- * @param device MAX31865 descriptor
- * @return The raw unsigned 16-bit value, NOT temperature value
- */
 uint16_t max31865_get_upper_threshold(struct max31865_dev *device)
 {
 	uint8_t highmsb = 0x03;
 	uint8_t highlsb = 0x04;
 	max31865_read_raw(device, &highmsb);
 	max31865_read_raw(device, &highlsb);
-
+	
 	uint16_t highthresh = 0x00;
 
 	highthresh = (((uint16_t)highmsb << 8) | (uint16_t)highlsb);
@@ -282,28 +213,19 @@ uint16_t max31865_get_upper_threshold(struct max31865_dev *device)
 	return highthresh;
 }
 
-/**
- * @brief RTD setup options for MAX31865_2WIRE, MAX31865_3WIRE, MAX31865_4WIRE
- * @param device MAX31865 descriptor
- * @param wires The number of wires in enum format
- */
 void max31865_set_wires(struct max31865_dev *device)
-{
-	max31865_numwires_t wires;
+{	max31865_numwires_t wires;
 	uint8_t wireReg = 0x00;
-	if (wires == MAX31865_3WIRE) {
+	if (wires == MAX31865_3WIRE)
+	{
 		wireReg |= 0x10;
-	} else {
+	} else
+	{
 		wireReg &= ~0x10;
 	}
 	max31865_write_raw(device, &wireReg, &wires);
 }
 
-/**
- * @brief Read the raw 16-bit value from the RTD_REG in one shot mode
- * @param device MAX31865 descriptor
- * @return The raw unsigned 16-bit value, NOT temperature
- */
 uint16_t max31865_read_RTD(struct max31865_dev *device)
 {
 	max31865_clear_fault(device);
@@ -312,10 +234,12 @@ uint16_t max31865_read_RTD(struct max31865_dev *device)
 
 	uint8_t confReg = 0x00;
 	uint8_t rtdReg = 0x00;
-	max31865_read_raw(device, &confReg);
-	if (confReg = 0x00) {
+	max_read_raw(device, &confReg);
+	if (confReg = 0x00)
+	{
 		rtdReg |= 0x20;
-	} else {
+	} else 
+	{
 		rtdReg &= ~0x20;
 	}
 	max31865_write_raw(device, &confReg, &rtdReg);
