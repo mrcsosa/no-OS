@@ -251,7 +251,7 @@ int32_t xil_irq_register_callback(struct no_os_irq_ctrl_desc *desc,
 	case IRQ_PS:
 #ifdef XSCUGIC_H
 		return XScuGic_Connect(xil_dev->instance, irq_id,
-				       (Xil_InterruptHandler) callback_desc->legacy_callback,
+				       (Xil_InterruptHandler) callback_desc->callback,
 				       callback_desc->ctx);
 #endif
 		break;
@@ -265,13 +265,13 @@ int32_t xil_irq_register_callback(struct no_os_irq_ctrl_desc *desc,
 			if (NO_OS_IS_ERR_VALUE(ret))
 				return -1;
 			XTmrCtr_SetHandler(callback_desc->legacy_config,
-					   (XTmrCtr_Handler)callback_desc->legacy_callback,
+					   (XTmrCtr_Handler)callback_desc->callback,
 					   callback_desc->ctx);
 
 			return 0;
 		}
 		return XIntc_Connect(xil_dev->instance, irq_id,
-				     (XInterruptHandler) callback_desc->legacy_callback,
+				     (XInterruptHandler) callback_desc->callback,
 				     callback_desc->ctx);
 #endif
 		break;
@@ -334,7 +334,7 @@ int32_t xil_irq_trigger_level_set(struct no_os_irq_ctrl_desc *desc,
  * @return 0 in case of success, -1 otherwise.
  */
 int32_t xil_irq_unregister_callback(struct no_os_irq_ctrl_desc *desc,
-				    uint32_t irq_id, struct callback_desc *cb)
+				    uint32_t irq_id, struct no_os_callback_desc *cb)
 {
 	struct xil_irq_desc *xil_dev = desc->extra;
 

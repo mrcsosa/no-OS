@@ -111,7 +111,11 @@ static const char * const iio_chan_type_string[] = {
 	[IIO_TEMP] = "temp",
 	[IIO_CAPACITANCE] = "capacitance",
 	[IIO_ACCEL] = "accel",
-	[IIO_RESISTANCE] = "resistance"
+	[IIO_RESISTANCE] = "resistance",
+	[IIO_MAGN] = "magn",
+	[IIO_INCLI] = "incli",
+	[IIO_VELOCITY] = "velocity",
+	[IIO_ANGL] = "angl"
 };
 
 static const char * const iio_modifier_names[] = {
@@ -1171,7 +1175,6 @@ static int iio_close_dev(struct iiod_ctx *ctx, const char *device)
 		trig = &desc->trigs[dev->trig_idx];
 		if (trig->descriptor->disable)
 			ret = trig->descriptor->disable(trig->instance);
-		dev->trig_idx = NO_TRIGGER;
 	}
 
 	return ret;

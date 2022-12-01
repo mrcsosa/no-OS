@@ -46,6 +46,7 @@
 #include "no_os_spi.h"
 #include "pico_spi.h"
 #include "pico/stdlib.h"
+#include "no_os_delay.h"
 #include "hardware/resets.h"
 
 /******************************************************************************/
@@ -119,9 +120,11 @@ static int pico_spi_config(struct no_os_spi_desc *desc)
 	gpio_set_function(pico_spi->spi_rx_pin, GPIO_FUNC_SPI);
 	gpio_set_function(pico_spi->spi_sck_pin, GPIO_FUNC_SPI);
 	gpio_set_function(pico_spi->spi_tx_pin, GPIO_FUNC_SPI);
+	gpio_init(pico_spi->spi_cs_pin);
+	/* Set output direction for CS */
 	gpio_set_dir(pico_spi->spi_cs_pin, true);
-	gpio_pull_up(pico_spi->spi_cs_pin);
-
+	/* Set CS pin high */
+	gpio_put(pico_spi->spi_cs_pin, 1);
 	/* Enable SPI */
 	hw_set_bits(&spi_get_hw(pico_spi->spi_instance)->cr1, SPI_SSPCR1_SSE_BITS);
 
@@ -238,13 +241,24 @@ int32_t pico_spi_transfer(struct no_os_spi_desc *desc,
 
 	for (uint32_t i = 0; i < len; i++) {
 
-		gpio_pull_down(pico_spi->spi_cs_pin);
+		/* Assert CS */
+		gpio_put(pico_spi->spi_cs_pin, 0);
+
+		if(msgs[i].cs_delay_first)
+			no_os_udelay(msgs[i].cs_delay_first);
 
 		spi_write_read_blocking(pico_spi->spi_instance, msgs[i].tx_buff,
 					msgs[i].rx_buff, msgs[i].bytes_number);
 
+		if(msgs[i].cs_delay_last)
+			no_os_udelay(msgs[i].cs_delay_last);
+
 		if (msgs[i].cs_change)
-			gpio_pull_up(pico_spi->spi_cs_pin);
+			/* De-assert CS */
+			gpio_put(pico_spi->spi_cs_pin, 1);
+
+		if(msgs[i].cs_change_delay)
+			no_os_udelay(msgs[i].cs_change_delay);
 	}
 
 	return 0;
