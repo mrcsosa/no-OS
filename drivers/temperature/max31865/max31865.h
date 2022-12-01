@@ -1,7 +1,7 @@
 /***************************************************************************//**
- *   @file   max31855.c
- *   @brief  Implementation of MAX31855 Driver.
- *   @author Ciprian Regus (ciprian.regus@analog.com)
+ *   @file   max31865.c
+ *   @brief  Implementation of MAX31865 Driver.
+ *   @author Marc Paolo Sosa (marcpaolo.sosa@analog.com)
 ********************************************************************************
  * Copyright 2022(c) Analog Devices, Inc.
  *
@@ -37,8 +37,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
-#ifndef __MAX31855_H__
-#define __MAX31855_H__
+#ifndef __MAX31865_H__
+#define __MAX31865_H__
 
 /******************************************************************************/
 /***************************** Include Files **********************************/
@@ -78,16 +78,19 @@
 #define MAX31865_FAULT_RTDINLOW 0x08
 #define MAX31865_FAULT_OVUV 0x04
 
-#define RTD_A 3.9083e-3
-#define RTD_B -5.775e-7
-
+/**
+ * @brief Max31865 wires setup for RTD sensor
+ */
 typedef enum max31865_numwires {
-  MAX31865_2WIRE = 0,
-  MAX31865_3WIRE = 1,
-  MAX31865_4WIRE = 0
+	MAX31865_2WIRE = 0,
+	MAX31865_3WIRE = 1,
+	MAX31865_4WIRE = 0
 } max31865_numwires_t;
 
 
+/**
+ * @brief MAX31855 comm init param
+ */
 struct max31865_init_param {
 	struct no_os_spi_init_param spi_init;
 };
@@ -97,7 +100,6 @@ struct max31865_init_param {
  */
 struct max31865_dev {
 	struct no_os_spi_desc *comm_desc;
-	// union max31865_fault_sts fault;
 };
 
 
@@ -128,16 +130,19 @@ void max31865_auto_convert(struct max31865_dev *, bool b);
 /** Enable 50Hz filter, default is 60Hz */
 void max31865_enable_50Hz(struct max31865_dev *, bool b);
 
+/** Set threshold **/
 void max31865_set_threshold(struct max31865_dev *, uint16_t *, uint16_t *);
 
+/** Get Lower threshold **/
 uint16_t max31865_get_lower_threshold(struct max31865_dev*);
 
+/** Get Upper threshold **/
 uint16_t max31865_get_upper_threshold(struct max31865_dev*);
 
+/** Set Wires **/
 void max31865_set_wires(struct max31865_dev *);
 
+/** Read RTD **/
 uint16_t max31865_read_RTD(struct max31865_dev *);
-
-
 
 #endif
