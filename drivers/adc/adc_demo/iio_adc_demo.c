@@ -147,11 +147,12 @@ int32_t adc_submit_samples(struct iio_device_data *dev_data)
 	uint32_t ch = -1;
 	uint16_t buff[TOTAL_ADC_CHANNELS];
 	uint32_t i;
+	uint16_t *ch_buf_ptr;
 
 	if(!dev_data)
 		return -ENODEV;
 
-	desc = dev_data->dev;
+	desc = (struct adc_demo_desc *)dev_data->dev;
 
 	if(desc->ext_buff == NULL) {
 		int offset_per_ch = NO_OS_ARRAY_SIZE(sine_lut) / TOTAL_ADC_CHANNELS;
@@ -165,9 +166,10 @@ int32_t adc_submit_samples(struct iio_device_data *dev_data)
 	}
 
 	for(i = 0; i < dev_data->buffer->size / dev_data->buffer->bytes_per_scan; i++) {
-		while(get_next_ch_idx(desc->active_ch, ch, &ch))
-			buff[k++] = ((uint16_t (*)[desc->ext_buff_len])(desc->ext_buff))[ch]
-				    [i % desc->ext_buff_len];
+		while(get_next_ch_idx(desc->active_ch, ch, &ch)) {
+			ch_buf_ptr = (uint16_t*)desc->ext_buff + (ch * desc->ext_buff_len);
+			buff[k++] = ch_buf_ptr[i];
+		}
 		k = 0;
 		iio_buffer_push_scan(dev_data->buffer, buff);
 	}
@@ -190,6 +192,7 @@ int32_t adc_demo_trigger_handler(struct iio_device_data *dev_data)
 	uint32_t ch = -1;
 	uint16_t buff[TOTAL_ADC_CHANNELS];
 	static uint32_t i = 0;
+	uint16_t *ch_buf_ptr;
 
 	if (!dev_data)
 		return -EINVAL;
@@ -208,8 +211,10 @@ int32_t adc_demo_trigger_handler(struct iio_device_data *dev_data)
 		return iio_buffer_push_scan(dev_data->buffer, buff);
 	}
 
-	while(get_next_ch_idx(desc->active_ch, ch, &ch))
-		buff[k++] = ((uint16_t (*)[desc->ext_buff_len])(desc->ext_buff))[ch][i];
+	while(get_next_ch_idx(desc->active_ch, ch, &ch)) {
+		ch_buf_ptr = (uint16_t*)desc->ext_buff + (ch * desc->ext_buff_len);
+		buff[k++] = ch_buf_ptr[i];
+	}
 	if (i == (desc->ext_buff_len - 1))
 		i = 0;
 	else

@@ -41,6 +41,7 @@
 #define MAXIM_SPI_H_
 
 #include <stdint.h>
+#include "gpio.h"
 
 /**
  * @brief maxim specific SPI platform ops structure
@@ -55,6 +56,13 @@ enum spi_ss_polarity {
 struct max_spi_init_param {
 	uint32_t numSlaves;
 	enum spi_ss_polarity polarity;
+	mxc_gpio_vssel_t vssel;
+};
+
+struct max_spi_state {
+	struct max_spi_init_param *init_param;
+	uint32_t cs_delay_first;
+	uint32_t cs_delay_last;
 };
 
 #endif

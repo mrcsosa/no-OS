@@ -59,17 +59,18 @@ extern UART_HandleTypeDef huart5;
 #ifdef IIO_SUPPORT
 #define INTC_DEVICE_ID  0
 #define IIO_APP_HUART   (&huart5)
-#define UART_IRQ_ID     UART5_IRQn
 #endif
+#define UART_IRQ_ID     UART5_IRQn
 
 #define UART_DEVICE_ID  5
 #define UART_BAUDRATE   115200
 #define UART_EXTRA      &adxl355_uart_extra_ip
+#define UART_OPS        &stm32_uart_ops
 
 #define SPI_DEVICE_ID   1
 #define SPI_BAUDRATE    4000000
 #define SPI_CS          15
-#define SPI_CS_PORT     GPIOA
+#define SPI_CS_PORT     0
 #define SPI_OPS         &stm32_spi_ops
 #define SPI_EXTRA       &adxl355_spi_extra_ip
 

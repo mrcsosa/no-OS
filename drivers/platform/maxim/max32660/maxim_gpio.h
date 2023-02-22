@@ -44,6 +44,7 @@
 #include "no_os_irq.h"
 #include "no_os_gpio.h"
 #include "max32660.h"
+#include "gpio.h"
 
 #define N_PINS	MXC_CFG_GPIO_PINS_PORT
 #define N_PORTS	MXC_CFG_GPIO_INSTANCES
@@ -58,8 +59,8 @@ extern const struct no_os_gpio_platform_ops max_gpio_ops;
 extern const struct no_os_irq_platform_ops max_gpio_irq_ops;
 
 struct max_gpio_init_param {
-	/** Input/Output */
-	uint32_t direction;
+	/** GPIO's voltage level */
+	mxc_gpio_vssel_t vssel;
 };
 
 #endif

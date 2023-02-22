@@ -184,7 +184,6 @@ int32_t mbed_gpio_irq_ctrl_init(struct no_os_irq_ctrl_desc **desc,
 		goto err_mbed_irq_desc;
 
 	irq_desc->irq_ctrl_id = param->irq_ctrl_id;
-	irq_desc->platform_ops = &mbed_gpio_irq_ops;
 
 	/* Copy the Mbed IRQ init parameters */
 	mbed_gpio_irq_desc->gpio_irq_pin = ((struct mbed_gpio_irq_init_param *)
@@ -348,7 +347,7 @@ int32_t mbed_gpio_irq_ctrl_remove(struct no_os_irq_ctrl_desc *desc)
 {
 	uint8_t irq_id;
 
-	if (!desc || !desc->extra || (irq_id >= NB_GPIO_IRQS))
+	if (!desc || !desc->extra)
 		return -EINVAL;
 
 	if (!(((struct mbed_gpio_irq_desc *)desc->extra)->int_obj))

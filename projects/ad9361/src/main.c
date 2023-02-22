@@ -100,9 +100,9 @@ static uint8_t out_buff[MAX_SIZE_BASE_ADDR];
 
 #if defined(DAC_DMA_EXAMPLE) || defined(IIO_SUPPORT)
 uint32_t dac_buffer[DAC_BUFFER_SAMPLES] __attribute__ ((aligned));
+#endif
 uint16_t adc_buffer[ADC_BUFFER_SAMPLES * ADC_CHANNELS] __attribute__ ((
 			aligned));
-#endif
 
 #define AD9361_ADC_DAC_BYTES_PER_SAMPLE 2
 
@@ -147,9 +147,15 @@ struct xil_gpio_init_param xil_gpio_param = {
 #endif
 
 struct axi_adc_init rx_adc_init = {
-	"cf-ad9361-lpc",
-	RX_CORE_BASEADDR,
-	4
+	.name = "cf-ad9361-lpc",
+	.base = RX_CORE_BASEADDR,
+#ifdef FMCOMMS5
+	.slave_base = AD9361_RX_1_BASEADDR,
+	.num_channels = 8,
+#else
+	.num_channels = 4,
+#endif
+	.num_slave_channels =  4
 };
 struct axi_dac_init tx_dac_init = {
 	"cf-ad9361-dds-core-lpc",
@@ -160,7 +166,7 @@ struct axi_dac_init tx_dac_init = {
 struct axi_dmac_init rx_dmac_init = {
 	"rx_dmac",
 	CF_AD9361_RX_DMA_BASEADDR,
-#ifdef ADC_DMA_IRQ_EXAMPLE
+#ifdef DMA_IRQ_ENABLE
 	IRQ_ENABLED
 #else
 	IRQ_DISABLED
@@ -170,7 +176,7 @@ struct axi_dmac *rx_dmac;
 struct axi_dmac_init tx_dmac_init = {
 	"tx_dmac",
 	CF_AD9361_TX_DMA_BASEADDR,
-#ifdef ADC_DMA_IRQ_EXAMPLE
+#ifdef DMA_IRQ_ENABLE
 	IRQ_ENABLED
 #else
 	IRQ_DISABLED
@@ -558,7 +564,8 @@ int main(void)
 #endif
 
 #ifdef ADI_RF_SOM_CMOS
-	default_init_param.swap_ports_enable = 1;
+	if (AD9361_DEVICE)
+		default_init_param.swap_ports_enable = 1;
 	default_init_param.lvds_mode_enable = 0;
 	default_init_param.lvds_rx_onchip_termination_enable = 0;
 	default_init_param.full_port_enable = 1;
@@ -586,6 +593,7 @@ int main(void)
 	default_init_param.tx_synthesizer_frequency_hz = 2300000000UL;
 
 	rx_adc_init.base = AD9361_RX_1_BASEADDR;
+	rx_adc_init.num_slave_channels = 0;
 	tx_dac_init.base = AD9361_TX_1_BASEADDR;
 
 	ad9361_init(&ad9361_phy_b, &default_init_param);
@@ -608,13 +616,12 @@ int main(void)
 #ifdef DAC_DMA_EXAMPLE
 #ifdef FMCOMMS5
 	axi_dac_init(&ad9361_phy_b->tx_dac, &tx_dac_init);
-	axi_adc_init(&ad9361_phy_b->rx_adc, &rx_adc_init);
 	axi_dac_set_datasel(ad9361_phy_b->tx_dac, -1, AXI_DAC_DATA_SEL_DMA);
 	rx_adc_init.base = AD9361_RX_0_BASEADDR;
+	rx_adc_init.num_slave_channels = 4;
 	tx_dac_init.base = AD9361_TX_0_BASEADDR;
 #endif
 	axi_dac_init(&ad9361_phy->tx_dac, &tx_dac_init);
-	axi_adc_init(&ad9361_phy->rx_adc, &rx_adc_init);
 	extern const uint32_t sine_lut_iq[1024];
 	axi_dac_set_datasel(ad9361_phy->tx_dac, -1, AXI_DAC_DATA_SEL_DMA);
 	axi_dac_load_custom_data(ad9361_phy->tx_dac, sine_lut_iq,
@@ -627,6 +634,9 @@ int main(void)
 #ifdef FMCOMMS5
 	axi_dac_init(&ad9361_phy_b->tx_dac, &tx_dac_init);
 	axi_dac_set_datasel(ad9361_phy_b->tx_dac, -1, AXI_DAC_DATA_SEL_DDS);
+	rx_adc_init.base = AD9361_RX_0_BASEADDR;
+	rx_adc_init.num_slave_channels = 4;
+	tx_dac_init.base = AD9361_TX_0_BASEADDR;
 #endif
 	axi_dac_init(&ad9361_phy->tx_dac, &tx_dac_init);
 	axi_dac_set_datasel(ad9361_phy->tx_dac, -1, AXI_DAC_DATA_SEL_DDS);
@@ -642,7 +652,7 @@ int main(void)
 #if (defined XILINX_PLATFORM || defined ALTERA_PLATFORM) && \
 	(defined ADC_DMA_EXAMPLE)
 	uint32_t samples = 16384;
-#if (defined ADC_DMA_IRQ_EXAMPLE)
+#if (defined DMA_IRQ_ENABLE)
 	/**
 	 * Xilinx platform dependent initialization for IRQ.
 	 */
@@ -699,7 +709,7 @@ int main(void)
 	// of the cache line.
 
 #ifdef DAC_DMA_EXAMPLE
-#ifdef ADC_DMA_IRQ_EXAMPLE
+#ifdef DMA_IRQ_ENABLE
 	struct no_os_callback_desc tx_dmac_callback = {
 		.ctx = tx_dmac,
 		.callback = axi_dmac_mem_to_dev_isr,
@@ -715,7 +725,6 @@ int main(void)
 		return status;
 #endif
 
-#ifdef FMCOMMS5
 	struct axi_dma_transfer transfer = {
 		// Number of bytes to write/read
 		.size = sizeof(sine_lut_iq),
@@ -737,34 +746,11 @@ int main(void)
 
 	no_os_mdelay(1000);
 
-#else
-	struct axi_dma_transfer transfer = {
-		// Number of bytes to write/read
-		.size = sizeof(sine_lut_iq),
-		// Transfer done flag
-		.transfer_done = 0,
-		// Signal transfer mode
-		.cyclic = CYCLIC,
-		// Address of data source
-		.src_addr = (uintptr_t)dac_buffer,
-		// Address of data destination
-		.dest_addr = 0
-	};
-
-	/* Transfer the data. */
-	axi_dmac_transfer_start(tx_dmac, &transfer);
-
-	/* Flush cache data. */
-	Xil_DCacheInvalidateRange((uintptr_t)dac_buffer,sizeof(sine_lut_iq));
-
-	no_os_mdelay(1000);
-#endif
 #endif
 #ifdef FMCOMMS5
 	struct axi_dma_transfer read_transfer = {
 		// Number of bytes to write/read
-		.size = samples * AD9361_ADC_DAC_BYTES_PER_SAMPLE *
-		(ad9361_phy_b->rx_adc->num_channels + ad9361_phy->rx_adc->num_channels),
+		.size = samples * AD9361_ADC_DAC_BYTES_PER_SAMPLE * ad9361_phy->rx_adc->num_channels,
 		// Transfer done flag
 		.transfer_done = 0,
 		// Signal transfer mode
@@ -807,13 +793,12 @@ int main(void)
 #ifdef XILINX_PLATFORM
 #ifdef FMCOMMS5
 	Xil_DCacheInvalidateRange((uintptr_t)ADC_DDR_BASEADDR,
-				  samples * AD9361_ADC_DAC_BYTES_PER_SAMPLE * (ad9361_phy_b->rx_adc->num_channels
-						  +
-						  ad9361_phy->rx_adc->num_channels));
+				  samples * AD9361_ADC_DAC_BYTES_PER_SAMPLE *
+				  ad9361_phy->rx_adc->num_channels);
 	printf("DAC_DMA_EXAMPLE: address=%#x samples=%lu channels=%u bits=%u\n",
 	       (uintptr_t)ADC_DDR_BASEADDR,
 	       read_transfer.size / AD9361_ADC_DAC_BYTES_PER_SAMPLE,
-	       rx_adc_init.num_channels * 2,
+	       rx_adc_init.num_channels,
 	       8 * sizeof(adc_buffer[0]));
 #else
 	Xil_DCacheInvalidateRange((uintptr_t)adc_buffer, sizeof(adc_buffer));
@@ -830,42 +815,84 @@ int main(void)
 	/**
 	 * iio application configurations.
 	 */
-	//struct iio_init_param iio_init_par;
+	struct xil_uart_init_param platform_uart_init_par = {
+#ifdef XPAR_XUARTLITE_NUM_INSTANCES
+		.type = UART_PL,
+#else
+		.type = UART_PS,
+		.irq_id = UART_IRQ_ID
+#endif
+	};
+
+	struct no_os_uart_init_param iio_uart_ip = {
+		.device_id = UART_DEVICE_ID,
+		.irq_id = UART_IRQ_ID,
+		.baud_rate = UART_BAUDRATE,
+		.size = NO_OS_UART_CS_8,
+		.parity = NO_OS_UART_PAR_NO,
+		.stop = NO_OS_UART_STOP_1_BIT,
+		.extra = &platform_uart_init_par,
+		.platform_ops = &xil_uart_ops
+	};
+
+	struct iio_app_desc *app;
+	struct iio_app_init_param app_init_param = { 0 };
 
 	/**
 	 * iio axi adc configurations.
 	 */
 	struct iio_axi_adc_init_param iio_axi_adc_init_par;
+#ifdef FMCOMMS5
+	struct iio_axi_adc_init_param iio_axi_adc_b_init_par;
+#endif
 
 	/**
 	 * iio axi dac configurations.
 	 */
 	struct iio_axi_dac_init_param iio_axi_dac_init_par;
+#ifdef FMCOMMS5
+	struct iio_axi_dac_init_param iio_axi_dac_b_init_par;
+#endif
 
 	/**
 	 * iio ad9361 configurations.
 	 */
 	struct iio_ad9361_init_param iio_ad9361_init_param;
+#ifdef FMCOMMS5
+	struct iio_ad9361_init_param iio_ad9361_b_init_param;
+#endif
 
 	/**
 	 * iio instance descriptor.
 	 */
 	struct iio_axi_adc_desc *iio_axi_adc_desc;
+#ifdef FMCOMMS5
+	struct iio_axi_adc_desc *iio_axi_adc_b_desc;
+#endif
 
 	/**
 	 * iio instance descriptor.
 	 */
 	struct iio_axi_dac_desc *iio_axi_dac_desc;
+#ifdef FMCOMMS5
+	struct iio_axi_dac_desc *iio_axi_dac_b_desc;
+#endif
 
 	/**
 	 * iio ad9361 instance descriptor.
 	 */
 	struct iio_ad9361_desc *iio_ad9361_desc;
+#ifdef FMCOMMS5
+	struct iio_ad9361_desc *iio_ad9361_b_desc;
+#endif
 
 	/**
 	 * iio devices corresponding to every device.
 	 */
 	struct iio_device *adc_dev_desc, *dac_dev_desc, *ad9361_dev_desc;
+#ifdef FMCOMMS5
+	struct iio_device *adc_b_dev_desc, *dac_b_dev_desc, *ad9361_b_dev_desc;
+#endif
 
 	status = axi_dmac_init(&tx_dmac, &tx_dmac_init);
 	if(status < 0)
@@ -884,10 +911,22 @@ int main(void)
 	if(status < 0)
 		return status;
 	iio_axi_adc_get_dev_descriptor(iio_axi_adc_desc, &adc_dev_desc);
+
 	struct iio_data_buffer read_buff = {
 		.buff = (void *)ADC_DDR_BASEADDR,
 		.size = 0xFFFFFFFF,
 	};
+
+#ifdef FMCOMMS5
+	iio_axi_adc_b_init_par = (struct iio_axi_adc_init_param) {
+		.rx_adc = ad9361_phy_b->rx_adc,
+	};
+
+	status = iio_axi_adc_init(&iio_axi_adc_b_desc, &iio_axi_adc_b_init_par);
+	if(status < 0)
+		return status;
+	iio_axi_adc_get_dev_descriptor(iio_axi_adc_b_desc, &adc_b_dev_desc);
+#endif
 
 	iio_axi_dac_init_par = (struct iio_axi_dac_init_param) {
 		.tx_dac = ad9361_phy->tx_dac,
@@ -907,6 +946,17 @@ int main(void)
 		.size = 0xFFFFFFFF,
 	};
 
+#ifdef FMCOMMS5
+	iio_axi_dac_b_init_par = (struct iio_axi_dac_init_param) {
+		.tx_dac = ad9361_phy_b->tx_dac,
+	};
+
+	status = iio_axi_dac_init(&iio_axi_dac_b_desc, &iio_axi_dac_b_init_par);
+	if (status < 0)
+		return status;
+	iio_axi_dac_get_dev_descriptor(iio_axi_dac_b_desc, &dac_b_dev_desc);
+#endif
+
 	iio_ad9361_init_param = (struct iio_ad9361_init_param) {
 		.ad9361_phy = ad9361_phy,
 	};
@@ -916,13 +966,37 @@ int main(void)
 		return status;
 	iio_ad9361_get_dev_descriptor(iio_ad9361_desc, &ad9361_dev_desc);
 
+#ifdef FMCOMMS5
+	iio_ad9361_b_init_param = (struct iio_ad9361_init_param) {
+		.ad9361_phy = ad9361_phy_b,
+	};
+
+	status = iio_ad9361_init(&iio_ad9361_b_desc, &iio_ad9361_b_init_param);
+	if (status < 0)
+		return status;
+	iio_ad9361_get_dev_descriptor(iio_ad9361_b_desc, &ad9361_b_dev_desc);
+#endif
+
 	struct iio_app_device devices[] = {
 		IIO_APP_DEVICE("cf-ad9361-lpc", iio_axi_adc_desc, adc_dev_desc, &read_buff, NULL),
 		IIO_APP_DEVICE("cf-ad9361-dds-core-lpc", iio_axi_dac_desc, dac_dev_desc, NULL, &write_buff),
-		IIO_APP_DEVICE("ad9361-phy", ad9361_phy, ad9361_dev_desc, NULL, NULL)
+		IIO_APP_DEVICE("ad9361-phy", ad9361_phy, ad9361_dev_desc, NULL, NULL),
+#ifdef FMCOMMS5
+		IIO_APP_DEVICE("cf-ad9361-B", iio_axi_adc_b_desc, adc_b_dev_desc, &read_buff, NULL),
+		IIO_APP_DEVICE("cf-ad9361-dds-core-B", iio_axi_dac_b_desc, dac_b_dev_desc, NULL, &write_buff),
+		IIO_APP_DEVICE("ad9361-phy-B", ad9361_phy_b, ad9361_b_dev_desc, NULL, NULL)
+#endif
 	};
 
-	iio_app_run(devices, NO_OS_ARRAY_SIZE(devices));
+	app_init_param.devices = devices;
+	app_init_param.nb_devices = NO_OS_ARRAY_SIZE(devices);
+	app_init_param.uart_init_params = iio_uart_ip;
+
+	status = iio_app_init(&app, app_init_param);
+	if (status)
+		return status;
+
+	iio_app_run(app);
 
 #endif // IIO_SUPPORT
 

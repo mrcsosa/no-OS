@@ -47,21 +47,12 @@
 #include "no_os_error.h"
 
 /******************************************************************************/
-/*************************** Types Declarations *******************************/
-/******************************************************************************/
-
-/* Hold trng device information */
-struct no_os_trng_desc {
-	/* Add here fields needed by implementation */
-};
-
-/******************************************************************************/
 /************************ Functions Definitions *******************************/
 /******************************************************************************/
 
 /* Initialize descriptor */
-int32_t no_os_trng_init(struct no_os_trng_desc **desc,
-			struct no_os_trng_init_param *param)
+int generic_trng_init(struct no_os_trng_desc **desc,
+		      struct no_os_trng_init_param *param)
 {
 	NO_OS_UNUSED_PARAM(desc);
 	NO_OS_UNUSED_PARAM(param);
@@ -70,14 +61,14 @@ int32_t no_os_trng_init(struct no_os_trng_desc **desc,
 }
 
 /* Free resources allocated in descriptor */
-void no_os_trng_remove(struct no_os_trng_desc *desc)
+int generic_trng_remove(struct no_os_trng_desc *desc)
 {
 	NO_OS_UNUSED_PARAM(desc);
 }
 
 /* Fill buffer with random numbers */
-int32_t no_os_trng_fill_buffer(struct no_os_trng_desc *desc, uint8_t *buff,
-			       uint32_t len)
+int generic_trng_fill_buffer(struct no_os_trng_desc *desc, uint8_t *buff,
+			     uint32_t len)
 {
 	NO_OS_UNUSED_PARAM(desc);
 	NO_OS_UNUSED_PARAM(buff);
@@ -85,3 +76,12 @@ int32_t no_os_trng_fill_buffer(struct no_os_trng_desc *desc, uint8_t *buff,
 
 	return -1;
 }
+
+/**
+ * @brief Generic TRNG platform ops structure
+ */
+const struct no_os_trng_platform_ops aducm_trng_ops = {
+	.init = &generic_trng_init,
+	.fill_buffer = &generic_trng_fill_buffer,
+	.remove = &generic_trng_remove
+};

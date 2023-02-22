@@ -73,6 +73,9 @@
 #define IIOD_CONN_BUFFER_SIZE	0x1000
 #define NO_TRIGGER				(uint32_t)-1
 
+#define NO_OS_STRINGIFY(x) #x
+#define NO_OS_TOSTRING(x) NO_OS_STRINGIFY(x)
+
 /******************************************************************************/
 /*************************** Types Declarations *******************************/
 /******************************************************************************/
@@ -99,8 +102,8 @@ static char header[] =
 	"<!ATTLIST debug-attribute name CDATA #REQUIRED>"
 	"<!ATTLIST buffer-attribute name CDATA #REQUIRED>"
 	"]>"
-	"<context name=\"xml\" description=\"no-OS analog 1.1.0-g0000000 #1 Tue Nov 26 09:52:32 IST 2019 armv7l\" >"
-	"<context-attribute name=\"no-OS\" value=\"1.1.0-g0000000\" />";
+	"<context name=\"xml\" description=\"no-OS "
+	NO_OS_TOSTRING(NO_OS_VERSION) "\" >";
 static char header_end[] = "</context>";
 
 static const char * const iio_chan_type_string[] = {
@@ -115,14 +118,18 @@ static const char * const iio_chan_type_string[] = {
 	[IIO_MAGN] = "magn",
 	[IIO_INCLI] = "incli",
 	[IIO_VELOCITY] = "velocity",
-	[IIO_ANGL] = "angl"
+	[IIO_ANGL] = "angl",
+	[IIO_ROT] = "rot",
 };
 
 static const char * const iio_modifier_names[] = {
 	[IIO_MOD_X] = "x",
 	[IIO_MOD_Y] = "y",
 	[IIO_MOD_Z] = "z",
-	[IIO_MOD_TEMP_AMBIENT] = "ambient"
+	[IIO_MOD_TEMP_AMBIENT] = "ambient",
+	[IIO_MOD_PITCH] = "pitch",
+	[IIO_MOD_YAW] = "yaw",
+	[IIO_MOD_ROLL] = "roll",
 };
 
 /* Parameters used in show and store functions */
@@ -146,15 +153,6 @@ struct iio_buffer_priv {
 	bool			initalized;
 	/* Set when calloc was used to initalize cb.buf */
 	bool			allocated;
-};
-
-/**
- * @struct iio_cntx_attr_priv
- * @brief Context attributes private structure
- */
-struct iio_cntx_attr_priv {
-	/** Pointer to list of context attributes (name and value) */
-	struct iio_context_attribute *attributes;
 };
 
 /**
@@ -205,8 +203,8 @@ struct iio_desc {
 	void			*phy_desc;
 	char			*xml_desc;
 	uint32_t		xml_size;
-	struct iio_cntx_attr_priv *cntx_attributes;
-	uint32_t nb_cntx_attr;
+	struct iio_ctx_attr	*ctx_attrs;
+	uint32_t		nb_ctx_attr;
 	struct iio_dev_priv	*devs;
 	uint32_t		nb_devs;
 	struct iio_trig_priv	*trigs;
@@ -928,7 +926,16 @@ static int iio_get_trigger(struct iiod_ctx *ctx, const char *device,
 			   char *trigger, uint32_t len)
 {
 	struct iio_dev_priv *dev;
+	struct iio_trig_priv *trig;
 	struct iio_desc *desc = ctx->instance;
+
+	if (!desc->nb_trigs)
+		return -ENOENT;
+
+	trig = get_iio_trig_device(desc, device);
+	/* Device is a trigger and triggers cannot have other triggers */
+	if (trig)
+		return -ENOENT;
 
 	dev = get_iio_device(desc, device);
 	if (!dev)
@@ -956,9 +963,19 @@ static int iio_set_trigger(struct iiod_ctx *ctx, const char *device,
 			   const char *trigger, uint32_t len)
 {
 	struct iio_dev_priv	*dev;
+	struct iio_trig_priv	*trig;
 	uint32_t i;
+	struct iio_desc *desc = ctx->instance;
 
-	dev = get_iio_device(ctx->instance, device);
+	if (!desc->nb_trigs)
+		return -ENOENT;
+
+	trig = get_iio_trig_device(desc, device);
+	/* Device is a trigger and triggers cannot have other triggers */
+	if (trig)
+		return -ENOENT;
+
+	dev = get_iio_device(desc, device);
 	if (!dev)
 		return -ENODEV;
 
@@ -967,7 +984,7 @@ static int iio_set_trigger(struct iiod_ctx *ctx, const char *device,
 		return 0;
 	}
 
-	i = iio_get_trig_idx_by_id(ctx->instance, trigger);
+	i = iio_get_trig_idx_by_id(desc, trigger);
 	if (i == NO_TRIGGER)
 		return -EINVAL;
 
@@ -1070,6 +1087,7 @@ static int iio_open_dev(struct iiod_ctx *ctx, const char *device,
 	uint32_t ch_mask;
 	int32_t ret;
 	int8_t *buf;
+	uint32_t buf_size;
 
 	dev = get_iio_device(ctx->instance, device);
 	if (!dev)
@@ -1095,6 +1113,7 @@ static int iio_open_dev(struct iiod_ctx *ctx, const char *device,
 			/* Need a bigger buffer or to allocate */
 			return -ENOMEM;
 
+		buf_size = dev->buffer.raw_buf_len;
 		buf = dev->buffer.raw_buf;
 	} else {
 		if (dev->buffer.allocated) {
@@ -1102,13 +1121,14 @@ static int iio_open_dev(struct iiod_ctx *ctx, const char *device,
 			free(dev->buffer.cb.buff);
 			dev->buffer.allocated = 0;
 		}
+		buf_size = dev->buffer.public.size;
 		buf = (int8_t *)calloc(dev->buffer.public.size, sizeof(*buf));
 		if (!buf)
 			return -ENOMEM;
 		dev->buffer.allocated = 1;
 	}
 
-	ret = no_os_cb_cfg(&dev->buffer.cb, buf, dev->buffer.public.size);
+	ret = no_os_cb_cfg(&dev->buffer.cb, buf, buf_size);
 	if (NO_OS_IS_ERR_VALUE(ret)) {
 		if (dev->buffer.allocated) {
 			free(dev->buffer.cb.buff);
@@ -1465,10 +1485,10 @@ int iio_step(struct iio_desc *desc)
  * @param buff_size - size of buffer
  * @return 0 in case of success or negative value otherwise.
  */
-static uint32_t iio_add_cntx_attr_in_xml(struct iio_desc *desc, char *buff,
-		uint32_t buff_size)
+static uint32_t iio_add_ctx_attr_in_xml(struct iio_desc *desc, char *buff,
+					uint32_t buff_size)
 {
-	struct iio_cntx_attr_priv *cntx_attr;
+	struct iio_ctx_attr *attr;
 	char dummy_buff[50];
 	int32_t i;
 	int32_t j;
@@ -1485,18 +1505,18 @@ static uint32_t iio_add_cntx_attr_in_xml(struct iio_desc *desc, char *buff,
 
 	i = 0;
 
-	cntx_attr =  desc->cntx_attributes;
-	if (cntx_attr)
-		for (j = 0; j < (int32_t)desc->nb_cntx_attr; j++) {
+	attr = desc->ctx_attrs;
+	if (attr)
+		for (j = 0; j < (int32_t)desc->nb_ctx_attr; j++) {
 			i += snprintf(buff + i,
 				      no_os_max(n - i, 0),
 				      "<context-attribute name=\"%s\" ",
-				      cntx_attr->attributes[j].name);
+				      attr[j].name);
 
 			i += snprintf(buff + i,
 				      no_os_max(n - i, 0),
 				      "value=\"%s\" />",
-				      cntx_attr->attributes[j].value);
+				      attr[j].value);
 		}
 
 	return i;
@@ -1683,7 +1703,7 @@ static int32_t iio_init_xml(struct iio_desc *desc)
 
 	/* -2 because of the 0 character */
 	size = sizeof(header) + sizeof(header_end) - 2;
-	size += iio_add_cntx_attr_in_xml(desc, NULL, -1);
+	size += iio_add_ctx_attr_in_xml(desc, NULL, -1);
 	for (i = 0; i < desc->nb_devs; i++) {
 		dev = desc->devs + i;
 		size += iio_generate_device_xml(dev->dev_descriptor,
@@ -1705,7 +1725,7 @@ static int32_t iio_init_xml(struct iio_desc *desc)
 
 	strcpy(desc->xml_desc, header);
 	of = sizeof(header) - 1;
-	of += iio_add_cntx_attr_in_xml(desc, desc->xml_desc + of, size - of);
+	of += iio_add_ctx_attr_in_xml(desc, desc->xml_desc + of, size - of);
 	for (i = 0; i < desc->nb_devs; i++) {
 		dev = desc->devs + i;
 		of += iio_generate_device_xml(dev->dev_descriptor,
@@ -1720,35 +1740,6 @@ static int32_t iio_init_xml(struct iio_desc *desc)
 	}
 
 	strcpy(desc->xml_desc + of, header_end);
-
-	return 0;
-}
-
-/**
- * @brief Initializes IIO context attributes.
- * @param desc  - IIO descriptor.
- * @param cntx_attr - Context attributes.
- * @param n     - Number of context attributes to be initialized.
- * @return 0 in case of success or negative value otherwise.
- */
-static int32_t iio_init_contxt_attrs(struct iio_desc *desc,
-				     struct iio_cntx_attr_init *cntx_attr, uint32_t n)
-{
-	uint32_t i;
-	struct iio_cntx_attr_priv *cntx_attr_priv_iter;
-	struct iio_cntx_attr_init *cntx_attr_init_iter;
-
-	desc->nb_cntx_attr = n;
-	desc->cntx_attributes = (struct iio_cntx_attr_priv *)calloc(desc->nb_cntx_attr,
-				sizeof(*desc->cntx_attributes));
-	if (!desc->cntx_attributes)
-		return -ENOMEM;
-
-	for (i = 0; i < n; i++) {
-		cntx_attr_init_iter = cntx_attr + i;
-		cntx_attr_priv_iter = desc->cntx_attributes + i;
-		cntx_attr_priv_iter->attributes = cntx_attr_init_iter->descriptor;
-	}
 
 	return 0;
 }
@@ -1846,12 +1837,8 @@ int iio_init(struct iio_desc **desc, struct iio_init_param *init_param)
 	if (!ldesc)
 		return -ENOMEM;
 
-	if (init_param->cntx_attrs && init_param->cntx_attrs->descriptor) {
-		ret = iio_init_contxt_attrs(ldesc, init_param->cntx_attrs,
-					    init_param->nb_cntx_attrs);
-		if (NO_OS_IS_ERR_VALUE(ret))
-			goto free_devs;
-	}
+	ldesc->ctx_attrs = init_param->ctx_attrs;
+	ldesc->nb_ctx_attr = init_param->nb_ctx_attr;
 
 	ret = iio_init_trigs(ldesc, init_param->trigs, init_param->nb_trigs);
 	if (NO_OS_IS_ERR_VALUE(ret))
@@ -1869,11 +1856,8 @@ int iio_init(struct iio_desc **desc, struct iio_init_param *init_param)
 	ops = &ldesc->iiod_ops;
 	ops->read_attr = iio_read_attr;
 	ops->write_attr = iio_write_attr;
-	// Allow set trigger and get trigger operations only if trigger exists in application
-	if (init_param->nb_trigs && init_param->trigs) {
-		ops->get_trigger = iio_get_trigger;
-		ops->set_trigger = iio_set_trigger;
-	}
+	ops->get_trigger = iio_get_trigger;
+	ops->set_trigger = iio_set_trigger;
 	ops->read_buffer = iio_read_buffer;
 	ops->write_buffer = iio_write_buffer;
 	ops->refill_buffer = iio_refill_buffer;

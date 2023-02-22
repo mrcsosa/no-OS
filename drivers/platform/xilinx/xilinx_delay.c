@@ -43,6 +43,10 @@
 
 #include "no_os_delay.h"
 #include <sleep.h>
+#ifdef _XPARAMETERS_PS_H_
+#include "no_os_util.h"
+#include "xtime_l.h"
+#endif
 
 /******************************************************************************/
 /************************ Functions Definitions *******************************/
@@ -74,4 +78,23 @@ void no_os_mdelay(uint32_t msecs)
 #else
 	usleep_MB(msecs * 1000);
 #endif
+}
+
+/**
+ * @brief Get current time.
+ * @return Current time structure from system start (seconds, microseconds).
+ */
+struct no_os_time no_os_get_time(void)
+{
+	struct no_os_time t = {0, 0};
+#ifdef _XPARAMETERS_PS_H_
+	unsigned long long Xtime_Global;
+	uint32_t rem;
+
+	XTime_GetTime(&Xtime_Global);
+	t.s = no_os_div_u64_rem(Xtime_Global, COUNTS_PER_SECOND, &rem);
+	t.us = no_os_div_u64((uint64_t)rem * 1000000, COUNTS_PER_SECOND);
+#endif
+
+	return t;
 }

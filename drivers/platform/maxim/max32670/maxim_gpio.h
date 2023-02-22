@@ -48,6 +48,7 @@
 #include "no_os_irq.h"
 #include "no_os_gpio.h"
 #include "max32670.h"
+#include "gpio.h"
 
 /******************************************************************************/
 /********************** Macros an Constants Definitions ***********************/
@@ -74,8 +75,8 @@ extern const struct no_os_irq_platform_ops max_gpio_irq_ops;
  * @brief GPIO platform specific init parameters
  */
 struct max_gpio_init_param {
-	/** Input/Output */
-	uint32_t direction;
+	/** GPIO's voltage level */
+	mxc_gpio_vssel_t vssel;
 };
 
 #endif

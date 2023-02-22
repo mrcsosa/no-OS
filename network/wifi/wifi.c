@@ -323,16 +323,13 @@ int32_t wifi_init(struct wifi_desc **desc, struct wifi_init_param *param)
 	at_param.uart_irq_id = param->uart_irq_id;
 	at_param.connection_callback = _wifi_connection_callback;
 	at_param.callback_ctx = ldesc;
+	at_param.sw_reset_en = param->sw_reset_en;
 
 	result = at_init(&ldesc->at, &at_param);
 	if (NO_OS_IS_ERR_VALUE(result))
 		goto ldesc_err;
 
 	wifi_init_interface(ldesc);
-
-	result = at_run_cmd(ldesc->at, AT_RESET, AT_EXECUTE_OP, NULL);
-	if (NO_OS_IS_ERR_VALUE(result))
-		goto at_err;
 
 	par.in.wifi_mode = CLIENT;
 	result = at_run_cmd(ldesc->at, AT_SET_OPERATION_MODE, AT_SET_OP, &par);

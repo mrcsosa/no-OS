@@ -1,9 +1,9 @@
 /***************************************************************************//**
- *   @file   maxim_stdio.h
- *   @brief  Header file for UART driver stdout/stdin redirection.
+ *   @file   common_data.h
+ *   @brief  Defines common data to be used by ad74413r examples.
  *   @author Ciprian Regus (ciprian.regus@analog.com)
 ********************************************************************************
- * Copyright 2022(c) Analog Devices, Inc.
+ * Copyright 2023(c) Analog Devices, Inc.
  *
  * All rights reserved.
  *
@@ -36,18 +36,19 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
-#ifndef MAXIM_STDIO_H_
-#define MAXIM_STDIO_H_
+#ifndef __COMMON_DATA_H__
+#define __COMMON_DATA_H__
 
-#include <sys/stat.h>
-#include "no_os_uart.h"
+/******************************************************************************/
+/***************************** Include Files **********************************/
+/******************************************************************************/
+#include "platform_includes.h"
+#include "adt75.h"
 
-void maxim_uart_stdio(struct no_os_uart_desc *);
-int _isatty(int);
-int _write(int, char *, int);
-int _close(int);
-int _lseek(int, off_t, int);
-int _read(int, char *, int);
-int _fstat(int, struct stat *);
+/******************************************************************************/
+/********************** Macros and Constants Definitions **********************/
+/******************************************************************************/
+extern struct no_os_uart_init_param adt75_uart_ip;
+extern struct adt75_init_param adt75_ip;
 
-#endif
+#endif /* __COMMON_DATA_H__ */

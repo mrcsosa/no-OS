@@ -1,5 +1,5 @@
 /***************************************************************************//**
- *   @file   no_os_fifo.h
+ *   @file   no_os_units.h
  *   @brief  Header file of Units
  *   @author Antoniu Miclaus (antoniu.miclaus@analog.com)
 ********************************************************************************
@@ -61,10 +61,19 @@
 #define KHZ_PER_MHZ		1000UL
 #define HZ_PER_MHZ		1000000UL
 
+#define MILLIVOLT_PER_VOLT	1000UL
+#define MICROVOLT_PER_VOLT	1000000UL
+#define NANOVOLT_PER_VOLT	1000000000ULL
+
+#define MILLIAMPER_PER_AMPER	1000UL
+#define MICROAMPER_PER_AMPER	1000000UL
+#define NANOAMPER_PER_AMPER	1000000000ULL
+
 #define MILLIWATT_PER_WATT	1000UL
 #define MICROWATT_PER_MILLIWATT	1000UL
 #define MICROWATT_PER_WATT	1000000UL
 
+#define MILLIDEGREE_PER_DEGREE	1000UL
 
 /* Returns the given value converted from degree to rad */
 #define DEGREE_TO_RAD(deg) (((deg) * 314159ULL + 9000000ULL) / 18000000ULL)

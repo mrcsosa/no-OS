@@ -51,7 +51,10 @@
 #include "no_os_timer.h"
 #include "aducm3029_irq.h"
 #include "aducm3029_i2c.h"
+#include "aducm3029_uart.h"
 #include "aducm3029_gpio_irq.h"
+#include "aducm3029_timer.h"
+#include "parameters.h"
 
 #define MAX_SIZE_BASE_ADDR		1024
 
@@ -78,6 +81,7 @@ static int32_t adpd1080pmod_32k_calib(struct adpd188_dev *adpd1080_dev)
 		.id = 0,
 		.ticks_count = 0,
 		.freq_hz = 1,
+		.platform_ops = &aducm3029_timer_ops,
 		.extra = NULL
 	};
 	struct no_os_gpio_desc *sync_gpio;
@@ -210,6 +214,20 @@ int main(void)
 {
 	int32_t status;
 	uint16_t reg_data;
+	struct iio_app_desc *app;
+	struct iio_app_init_param app_init_param = { 0 };
+
+	struct no_os_uart_init_param adpd1080_uart_ip = {
+		.device_id = UART_DEVICE_ID,
+		.irq_id = UART_IRQ_ID,
+		.asynchronous_rx = true,
+		.baud_rate = UART_BAUDRATE,
+		.size = NO_OS_UART_CS_8,
+		.parity = NO_OS_UART_PAR_NO,
+		.stop = NO_OS_UART_STOP_1_BIT,
+		.extra = NULL,
+		.platform_ops = &aducm_uart_ops,
+	};
 
 	status = platform_init();
 	if (NO_OS_IS_ERR_VALUE(status))
@@ -405,6 +423,14 @@ int main(void)
 			       &iio_adpd1080_read_buff, NULL)
 	};
 
-	return iio_app_run(devices, NO_OS_ARRAY_SIZE(devices));
+	app_init_param.devices = devices;
+	app_init_param.nb_devices = NO_OS_ARRAY_SIZE(devices);
+	app_init_param.uart_init_params = adpd1080_uart_ip;
+
+	status = iio_app_init(&app, app_init_param);
+	if (status)
+		return status;
+
+	return iio_app_run(app);
 }
 

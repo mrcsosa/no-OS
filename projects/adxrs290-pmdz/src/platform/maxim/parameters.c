@@ -45,11 +45,16 @@
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
+struct max_uart_init_param adxrs290_uart_extra_ip = {
+	.flow = UART_FLOW_DIS
+};
+
 struct max_gpio_init_param adxrs290_gpio_extra_ip = {
-	.direction = 0,
+	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };
 
 struct max_spi_init_param adxrs290_spi_extra_ip  = {
 	.numSlaves = 1,
-	.polarity = SPI_SS_POL_LOW
+	.polarity = SPI_SS_POL_LOW,
+	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };

@@ -45,12 +45,15 @@
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
+struct stm32_uart_init_param adxrs290_uart_extra_ip = {
+	.huart = &huart5,
+};
+
 struct stm32_spi_init_param adxrs290_spi_extra_ip  = {
 	.chip_select_port = SPI_CS_PORT,
 };
 
 struct stm32_gpio_init_param adxrs290_gpio_extra_ip = {
 	.mode = GPIO_MODE_INPUT,
-	.port = GPIOA,
 	.speed = GPIO_SPEED_FREQ_VERY_HIGH,
 };

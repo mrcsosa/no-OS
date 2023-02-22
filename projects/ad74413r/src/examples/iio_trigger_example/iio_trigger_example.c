@@ -70,7 +70,8 @@ int iio_trigger_example_main()
 	int ret;
 	struct iio_hw_trig *ad74413r_trig_desc;
 	struct no_os_irq_ctrl_desc *ad74413r_irq_desc;
-	struct iio_desc *iio_desc;
+	struct iio_app_desc *app;
+	struct iio_app_init_param app_init_param = { 0 };
 
 	struct ad74413r_iio_desc *ad74413r_iio_desc;
 	struct ad74413r_iio_desc_init_param ad74413r_iio_ip;
@@ -118,7 +119,6 @@ int iio_trigger_example_main()
 	ad74413r_gpio_trig_ip.irq_ctrl = ad74413r_irq_desc;
 
 	/* Initialize hardware trigger */
-	ad74413r_gpio_trig_ip.iio_desc = &iio_desc,
 	ret = iio_hw_trig_init(&ad74413r_trig_desc, &ad74413r_gpio_trig_ip);
 	if (ret)
 		return ret;
@@ -137,7 +137,20 @@ int iio_trigger_example_main()
 				&ad74413r_iio_trig_desc)
 	};
 
-	return iio_app_run_with_trigs(iio_devices, NO_OS_ARRAY_SIZE(iio_devices),
-				      trigs, NO_OS_ARRAY_SIZE(trigs), ad74413r_irq_desc, &iio_desc);
+	app_init_param.devices = iio_devices;
+	app_init_param.nb_devices = NO_OS_ARRAY_SIZE(iio_devices);
+	app_init_param.uart_init_params = ad74413r_uart_ip;
+	app_init_param.trigs = trigs;
+	app_init_param.nb_trigs = NO_OS_ARRAY_SIZE(trigs);
+	app_init_param.irq_desc = ad74413r_irq_desc;
+
+	ret = iio_app_init(&app, app_init_param);
+	if (ret)
+		return ret;
+
+	// update the reference to iio_desc
+	ad74413r_trig_desc->iio_desc = app->iio_desc;
+
+	return iio_app_run(app);
 
 }

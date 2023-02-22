@@ -43,6 +43,8 @@
 
 #include <stdint.h>
 #include "i2c_regs.h"
+#include "max78000.h"
+#include "gpio.h"
 
 #ifndef MXC_I2C_GET_I2C
 #define MXC_I2C_GET_I2C(i)	((i) == 0 ? MXC_I2C0 :		\
@@ -63,6 +65,10 @@ struct max_i2c_extra {
 	/** Size of the write data in case of
 	 *  write-repeated start-read operation */
 	uint8_t prologue_size;
+};
+
+struct max_i2c_init_param {
+	mxc_gpio_vssel_t vssel;
 };
 
 /**

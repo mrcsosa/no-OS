@@ -49,12 +49,10 @@
 #include "uart.h"
 #include "tmr.h"
 #include "maxim_irq.h"
-#include "maxim_rtc.h"
 #include "max32665.h"
 #include "no_os_irq.h"
 #include "no_os_list.h"
 #include "no_os_uart.h"
-#include "no_os_rtc.h"
 #include "no_os_util.h"
 
 static struct event_list _events[] = {
@@ -225,6 +223,8 @@ void max_uart_callback(mxc_uart_req_t *req, int result)
 		ee = &_events[NO_OS_EVT_UART_TX_COMPLETE];
 	else if (req->rxLen == req->rxCnt && req->rxLen != 0)
 		ee = &_events[NO_OS_EVT_UART_RX_COMPLETE];
+	else
+		return;
 
 	ret = no_os_list_read_find(ee->actions, (void **)&a, &key);
 	if (ret)
@@ -257,7 +257,6 @@ int32_t max_irq_ctrl_init(struct no_os_irq_ctrl_desc **desc,
 		return -ENOMEM;
 
 	descriptor->irq_ctrl_id = param->irq_ctrl_id;
-	descriptor->platform_ops = param->platform_ops;
 	descriptor->extra = param->extra;
 
 	*desc = descriptor;

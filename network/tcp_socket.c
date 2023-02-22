@@ -61,7 +61,7 @@
 
 #warning "TCP socket communication is not secured"
 
-#define DEFAULT_CONNECTION_BUFFER_SIZE 500
+#define DEFAULT_CONNECTION_BUFFER_SIZE 256
 
 #else
 
@@ -169,6 +169,7 @@ static int32_t stcp_socket_init(struct secure_socket_desc **desc,
 	mbedtls_x509_crt_init(&ldesc->cacert);
 	mbedtls_x509_crt_init(&ldesc->clicert);
 	mbedtls_pk_init(&ldesc->pkey);
+	mbedtls_ssl_init(&ldesc->ssl);
 
 	ret = no_os_trng_init(&ldesc->trng, param->trng_init_param);
 	if (NO_OS_IS_ERR_VALUE(ret)) {
@@ -198,7 +199,7 @@ static int32_t stcp_socket_init(struct secure_socket_desc **desc,
 		mbedtls_ssl_conf_ca_chain(&ldesc->conf, &ldesc->cacert, NULL );
 		/* Verify server identity */
 		mbedtls_ssl_conf_authmode(&ldesc->conf,
-					  MBEDTLS_SSL_VERIFY_REQUIRED);
+					  param->cert_verify_mode);
 	} else {
 		/* Do not verify server identity */
 		mbedtls_ssl_conf_authmode(&ldesc->conf,
@@ -234,11 +235,15 @@ static int32_t stcp_socket_init(struct secure_socket_desc **desc,
 	/* Config Random number generator */
 	mbedtls_ssl_conf_rng(&ldesc->conf,
 			     (int (*)(void *, unsigned char *, size_t))
-			     trng_fill_buffer,
+			     no_os_trng_fill_buffer,
 			     (void *)ldesc->trng);
 
 	/* Set the resulting protocol configuration */
 	ret = mbedtls_ssl_setup(&ldesc->ssl, &ldesc->conf);
+	if (NO_OS_IS_ERR_VALUE(ret))
+		goto exit;
+
+	ret = mbedtls_ssl_set_hostname(&ldesc->ssl, param->hostname);
 	if (NO_OS_IS_ERR_VALUE(ret))
 		goto exit;
 

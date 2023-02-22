@@ -47,7 +47,7 @@
 #include "maxim_spi.h"
 #include "maxim_gpio.h"
 #include "maxim_uart.h"
-#include "maxim_stdio.h"
+#include "maxim_uart_stdio.h"
 
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
@@ -55,12 +55,13 @@
 
 #ifdef IIO_SUPPORT
 #define INTC_DEVICE_ID  0
-#define UART_IRQ_ID     UART0_IRQn
 #endif
+#define UART_IRQ_ID     UART0_IRQn
 
 #define UART_DEVICE_ID  0
 #define UART_BAUDRATE   57600
 #define UART_EXTRA      &adxl355_uart_extra_ip
+#define UART_OPS        &max_uart_ops
 
 #if (TARGET_NUM == 78000)
 #define SPI_DEVICE_ID   1

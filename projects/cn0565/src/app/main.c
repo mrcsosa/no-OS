@@ -118,17 +118,19 @@ int main(void)
 #endif
 		.asynchronous_rx = true,
 		.irq_id = UART_IRQ_ID,
+#if defined(STM32_PLATFORM)
+		.platform_ops = &stm32_uart_ops,
+#elif defined(ADUCM_PLATFORM)
+		.platform_ops = &aducm_uart_ops,
+#endif
 	};
 
 	ret = no_os_uart_init(&uart, &uip);
 	if (ret < 0)
 		return ret;
 
-#if defined(STM32_PLATFORM)
-	stm32_uart_stdio(uart);
-#elif defined(ADUCM_PLATFORM)
-	init_uart_stdio(uart);
-#endif
+	no_os_uart_stdio(uart);
+
 	printf("Hello!\n");
 #endif
 	struct no_os_i2c_init_param i2cip = {
@@ -174,12 +176,12 @@ int main(void)
 
 #if defined(STM32_PLATFORM)
 	struct stm32_gpio_init_param reset_xgip = {
-		.port = GPIOD,
 		.mode = GPIO_MODE_OUTPUT_PP,
 		.speed = GPIO_SPEED_FREQ_VERY_HIGH,
 	};
 #endif
 	struct no_os_gpio_init_param reset_gip = {
+		.port = 3,
 		.number = RESET_PIN,
 		.pull = NO_OS_PULL_NONE,
 #if defined(STM32_PLATFORM)
@@ -192,13 +194,13 @@ int main(void)
 
 #if defined(STM32_PLATFORM)
 	struct stm32_gpio_init_param gp0_xgip = {
-		.port = GPIOG,
 		.mode = GPIO_MODE_INPUT,
 		.speed = GPIO_SPEED_FREQ_VERY_HIGH,
 	};
 #endif
 
 	struct no_os_gpio_init_param gp0_gip = {
+		.port = 6,
 		.number = GP0_PIN,
 		.pull = NO_OS_PULL_NONE,
 #if defined(STM32_PLATFORM)
@@ -276,6 +278,28 @@ int main(void)
 	if (ret < 0)
 		goto error;
 #else
+#if defined(STM32_PLATFORM)
+	struct stm32_uart_init_param uart_extra_ip = {
+		.huart = &huart5,
+	};
+#endif
+
+	struct no_os_uart_init_param iio_uart_ip = {
+		.device_id = UART_DEVICE_ID,
+		.irq_id = UART_IRQ_ID,
+		.baud_rate = UART_BAUDRATE,
+		.size = NO_OS_UART_CS_8,
+		.parity = NO_OS_UART_PAR_NO,
+		.stop = NO_OS_UART_STOP_1_BIT,
+#if defined(STM32_PLATFORM)
+		.extra = &uart_extra_ip,
+#else
+		.extra = NULL,
+#endif
+		.platform_ops = UART_OPS
+	};
+	struct iio_app_desc *app;
+	struct iio_app_init_param app_init_param = { 0 };
 	struct ad5940_iio_dev *ad5940_iio = NULL;
 	struct ad5940_iio_init_param ad5940_iio_ip = {
 		.ad5940_init = &ad5940_ip,
@@ -304,7 +328,15 @@ int main(void)
 		},
 	};
 
-	return iio_app_run(devices, NO_OS_ARRAY_SIZE(devices));
+	app_init_param.devices = devices;
+	app_init_param.nb_devices = NO_OS_ARRAY_SIZE(devices);
+	app_init_param.uart_init_params = iio_uart_ip;
+
+	ret = iio_app_init(&app, app_init_param);
+	if (ret)
+		return ret;
+
+	return iio_app_run(app);
 #endif
 
 	printf("Bye!\n");

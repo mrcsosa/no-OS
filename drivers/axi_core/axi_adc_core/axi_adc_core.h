@@ -95,13 +95,13 @@
 #define AXI_ADC_OVER_RANGE		NO_OS_BIT(0)
 
 #define AXI_ADC_REG_CHAN_CNTRL_1(c)	(0x0410 + (c) * 0x40)
-#define AXI_ADC_DCFILT_OFFSET(x)	(((x) & 0xFFFF) << 16)
+#define AXI_ADC_DCFILT_OFFSET(x)	(((x) & 0xFFFFL) << 16)
 #define AXI_ADC_TO_DCFILT_OFFSET(x)	(((x) >> 16) & 0xFFFF)
 #define AXI_ADC_DCFILT_COEFF(x)		(((x) & 0xFFFF) << 0)
 #define AXI_ADC_TO_DCFILT_COEFF(x)	(((x) >> 0) & 0xFFFF)
 
 #define AXI_ADC_REG_CHAN_CNTRL_2(c)	(0x0414 + (c) * 0x40)
-#define AXI_ADC_IQCOR_COEFF_1(x)	(((x) & 0xFFFF) << 16)
+#define AXI_ADC_IQCOR_COEFF_1(x)	(((x) & 0xFFFFL) << 16)
 #define AXI_ADC_TO_IQCOR_COEFF_1(x)	(((x) >> 16) & 0xFFFF)
 #define AXI_ADC_IQCOR_COEFF_2(x)	(((x) & 0xFFFF) << 0)
 #define AXI_ADC_TO_IQCOR_COEFF_2(x)	(((x) >> 0) & 0xFFFF)
@@ -127,8 +127,12 @@ struct axi_adc {
 	const char *name;
 	/** Base Address */
 	uint32_t base;
+	/** Slave Base Address */
+	uint32_t slave_base;
 	/** Number of channels */
 	uint8_t	num_channels;
+	/** Number of slave channels */
+	uint8_t	num_slave_channels;
 	/** AXI ADC Clock */
 	uint64_t clock_hz;
 	/** AXI ADC Channel Mask*/
@@ -144,8 +148,12 @@ struct axi_adc_init {
 	const char *name;
 	/** Base Address */
 	uint32_t base;
+	/** Slave Base Address */
+	uint32_t slave_base;
 	/** Number of channels */
 	uint8_t	num_channels;
+	/** Number of slave channels */
+	uint8_t	num_slave_channels;
 };
 
 enum axi_adc_pn_sel {

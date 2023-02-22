@@ -47,29 +47,38 @@
 #include "mxc_errors.h"
 #include "mxc_pins.h"
 #include "maxim_spi.h"
+#include "no_os_delay.h"
+#include "no_os_print_log.h"
 #include "no_os_spi.h"
 #include "no_os_util.h"
+#include "no_os_units.h"
 
 #define SPI_MASTER_MODE	1
 #define SPI_SINGLE_MODE	0
+
+#define MAX_DELAY_SCLK	255
+#define NS_PER_US	1000
 
 /******************************************************************************/
 /************************ Functions Definitions *******************************/
 /******************************************************************************/
 
 /**
- * @brief Enable the chip select gpio on MAX32665 or MAX32650
- * @param spi - The SPI port registers
- * @param chip_select - cs index
+ * @brief Configure the VDDIO level for a SPI interface
+ * @param desc - the SPI descriptor
  * @return 0 in case of success, -EINVAL otherwise
  */
-static int32_t _max_spi_enable_ss(uint32_t id, uint32_t chip_select)
+static int32_t _max_spi_config_pins(struct no_os_spi_desc *desc)
 {
+	struct max_spi_state *st = desc->extra;
+	mxc_gpio_cfg_t spi_pins;
 	mxc_gpio_cfg_t cs;
 
-	switch(id) {
+	switch(desc->device_id) {
 	case 0:
-		switch(chip_select) {
+		spi_pins = gpio_cfg_spi0a;
+
+		switch(desc->chip_select) {
 		case 0:
 			cs = gpio_cfg_spi0_ss0a;
 			break;
@@ -84,7 +93,9 @@ static int32_t _max_spi_enable_ss(uint32_t id, uint32_t chip_select)
 		}
 		break;
 	case 1:
-		switch(chip_select) {
+		spi_pins = gpio_cfg_spi1;
+
+		switch(desc->chip_select) {
 		case 0:
 			cs = gpio_cfg_spi1_ss0;
 			break;
@@ -100,7 +111,9 @@ static int32_t _max_spi_enable_ss(uint32_t id, uint32_t chip_select)
 		break;
 
 	case 2:
-		switch(chip_select) {
+		spi_pins = gpio_cfg_spi2;
+
+		switch(desc->chip_select) {
 		case 0:
 			cs = gpio_cfg_spi2_ss0;
 			break;
@@ -116,7 +129,7 @@ static int32_t _max_spi_enable_ss(uint32_t id, uint32_t chip_select)
 		break;
 #ifdef MXC_SPI3
 	case 3:
-		switch(chip_select) {
+		switch(desc->chip_select) {
 		case 0:
 			cs = gpio_cfg_spi2_ss0;
 			break;
@@ -135,17 +148,93 @@ static int32_t _max_spi_enable_ss(uint32_t id, uint32_t chip_select)
 		return -EINVAL;
 	}
 
+	spi_pins.vssel = st->init_param->vssel;
+	cs.vssel = st->init_param->vssel;
+	MXC_GPIO_Config(&spi_pins);
 	MXC_GPIO_Config(&cs);
 
 	return 0;
 }
 
+/**
+ * @brief Set the closest first and last SCLK delays to what was requested
+ * @param desc - SPI descriptor
+ * @param msg - The message for which the delays will be set
+ * @return void
+ */
+static void _max_delay_config(struct no_os_spi_desc *desc,
+			      struct no_os_spi_msg *msg)
+{
+	struct max_spi_state *st = desc->extra;
+	uint32_t sstime_cache;
+	uint32_t ticks_delay;
+	mxc_spi_regs_t *spi;
+	uint32_t clk_rate;
+	uint32_t ticks_ns;
+
+	if (msg->cs_delay_first == st->cs_delay_first &&
+	    msg->cs_delay_last == st->cs_delay_last)
+		return;
+
+	spi = MXC_SPI_GET_SPI(desc->device_id);
+	sstime_cache = spi->ss_time;
+	clk_rate = MXC_SPI_GetPeripheralClock(spi);
+	ticks_ns = NO_OS_DIV_ROUND_CLOSEST(NANO, clk_rate);
+
+	if (msg->cs_delay_first != st->cs_delay_first) {
+		/**
+		 * The minimum number of delay ticks is 1. If 0 is written to the
+		 * sstime register, there would be a delay of 256 ticks.
+		 */
+		if (msg->cs_delay_first == 0)
+			ticks_delay = 1;
+		else
+			ticks_delay = msg->cs_delay_first * NS_PER_US / ticks_ns;
+
+		if (ticks_delay > MAX_DELAY_SCLK) {
+			pr_warning("cs_delay_first value is too high\n");
+			goto error;
+		}
+
+		spi->ss_time &= ~MXC_F_SPI_SS_TIME_PRE;
+		spi->ss_time |= no_os_field_prep(MXC_F_SPI_SS_TIME_PRE, ticks_delay);
+	}
+	if (msg->cs_delay_last != st->cs_delay_last) {
+		/**
+		 * The minimum number of delay ticks is 1. If 0 is written to the
+		 * sstime register, there would be a delay of 256 ticks.
+		 */
+		if (msg->cs_delay_first == 0)
+			ticks_delay = 1;
+		else
+			ticks_delay = msg->cs_delay_last * NS_PER_US / ticks_ns;
+
+		if (ticks_delay > MAX_DELAY_SCLK) {
+			pr_warning("cs_delay_last value is too high\n");
+			goto error;
+		}
+
+		spi->ss_time &= ~MXC_F_SPI_SS_TIME_POST;
+		spi->ss_time |= no_os_field_prep(MXC_F_SPI_SS_TIME_POST, ticks_delay);
+	}
+
+	st->cs_delay_first = msg->cs_delay_first;
+	st->cs_delay_last = msg->cs_delay_last;
+
+	return;
+
+error:
+	spi->ss_time = sstime_cache;
+}
+
 static int _max_spi_config(struct no_os_spi_desc *desc)
 {
 	struct max_spi_init_param *eparam;
+	struct max_spi_state *st;
 	int32_t ret;
 
-	eparam = desc->extra;
+	st = desc->extra;
+	eparam = st->init_param;
 
 	ret = MXC_SPI_Init(MXC_SPI_GET_SPI(desc->device_id), SPI_MASTER_MODE,
 			   SPI_SINGLE_MODE,
@@ -155,11 +244,9 @@ static int _max_spi_config(struct no_os_spi_desc *desc)
 		goto err_init;
 	}
 
-	ret = _max_spi_enable_ss(desc->device_id, desc->chip_select);
-	if (ret) {
-		ret = -EINVAL;
+	ret = _max_spi_config_pins(desc);
+	if (ret)
 		goto err_init;
-	}
 
 	ret = MXC_SPI_SetMode(MXC_SPI_GET_SPI(desc->device_id),
 			      (mxc_spi_mode_t)desc->mode);
@@ -199,14 +286,20 @@ int32_t max_spi_init(struct no_os_spi_desc **desc,
 	int32_t ret;
 	struct no_os_spi_desc *descriptor;
 	struct max_spi_init_param *eparam;
+	struct max_spi_state *st;
 
 	if (!param || !param->extra)
 		return -EINVAL;
 
 	descriptor = calloc(1, sizeof(*descriptor));
-
 	if (!descriptor)
 		return -ENOMEM;
+
+	st = calloc(1, sizeof(*st));
+	if (!st) {
+		ret = -ENOMEM;
+		goto err;
+	}
 
 	eparam = param->extra;
 	descriptor->device_id = param->device_id;
@@ -214,8 +307,9 @@ int32_t max_spi_init(struct no_os_spi_desc **desc,
 	descriptor->chip_select = param->chip_select;
 	descriptor->mode = param->mode;
 	descriptor->bit_order = param->bit_order;
-	descriptor->platform_ops = &max_spi_ops;
-	descriptor->extra = eparam;
+
+	st->init_param = eparam;
+	descriptor->extra = st;
 
 	if (descriptor->device_id >= MXC_SPI_INSTANCES) {
 		ret = -EINVAL;
@@ -232,6 +326,7 @@ int32_t max_spi_init(struct no_os_spi_desc **desc,
 err_init:
 	MXC_SPI_Shutdown(MXC_SPI_GET_SPI(descriptor->device_id));
 err:
+	free(st);
 	free(descriptor);
 
 	return ret;
@@ -248,6 +343,7 @@ int32_t max_spi_remove(struct no_os_spi_desc *desc)
 		return -EINVAL;
 
 	MXC_SPI_Shutdown(MXC_SPI_GET_SPI(desc->device_id));
+	free(desc->extra);
 	free(desc);
 
 	return 0;
@@ -292,12 +388,14 @@ int32_t max_spi_transfer(struct no_os_spi_desc *desc,
 		req.txLen = req.txData ? msgs[i].bytes_number : 0;
 		req.rxLen = req.rxData ? msgs[i].bytes_number : 0;
 
+		_max_delay_config(desc, &msgs[i]);
 		ret = MXC_SPI_MasterTransaction(&req);
-
 		if (ret == E_BAD_PARAM)
 			return -EINVAL;
 		if (ret == E_BAD_STATE)
 			return -EBUSY;
+
+		no_os_udelay(msgs[i].cs_change_delay);
 	}
 
 	return 0;

@@ -54,6 +54,7 @@
 #define RESET_PIN		13 // 0.13
 #define GP0_PIN			15 // 0.15
 #define INT_IRQn		GP0_PIN
+#define UART_OPS			&aducm_uart_ops
 #define IRQ_OPS			&aducm_irq_ops
 #define GPIO_IRQ_OPS    	&aducm_gpio_irq_ops
 
@@ -62,11 +63,12 @@
 
 #define SPI_DEVICE_ID		1
 #define SPI_CS			15
-#define SPI_CS_PORT		GPIOA
+#define SPI_CS_PORT		0
 #define INTC_DEVICE_ID		0
 #define INT_IRQn		EXTI9_5_IRQn
 #define UART_DEVICE_ID		5
 #define UART_IRQ_ID		UART5_IRQn
+#define UART_OPS			&stm32_uart_ops
 #define IRQ_OPS			&stm32_irq_ops
 #define GPIO_IRQ_OPS    	&stm32_gpio_irq_ops
 #ifdef IIO_SUPPORT

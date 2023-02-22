@@ -93,7 +93,7 @@ static int _max_spi_config(struct no_os_spi_desc *desc)
 
 	return 0;
 err_init:
-	MXC_SPI_Shutdown(MXC_SPI_GET_SPI(descriptor->device_id));
+	MXC_SPI_Shutdown(MXC_SPI_GET_SPI(desc->device_id));
 
 	return ret;
 }
@@ -125,7 +125,6 @@ int32_t max_spi_init(struct no_os_spi_desc **desc,
 	descriptor->chip_select = param->chip_select;
 	descriptor->mode = param->mode;
 	descriptor->bit_order = param->bit_order;
-	descriptor->platform_ops = &max_spi_ops;
 	descriptor->extra = eparam;
 
 	if (descriptor->device_id >= MXC_SPI_INSTANCES) {

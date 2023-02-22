@@ -59,17 +59,18 @@ extern UART_HandleTypeDef huart3;
 #ifdef IIO_SUPPORT
 #define INTC_DEVICE_ID  0
 #define IIO_APP_HUART   (&huart3)
-#define UART_IRQ_ID     USART3_IRQn
 #endif
+#define UART_IRQ_ID     USART3_IRQn
 
 #define UART_DEVICE_ID  3
 #define UART_BAUDRATE   115200
 #define UART_EXTRA      &ad74413r_uart_extra_ip
+#define UART_OPS        &stm32_uart_ops
 
 #define SPI_DEVICE_ID   1
 #define SPI_BAUDRATE    1000000
 #define SPI_CS          14
-#define SPI_CS_PORT     GPIOD
+#define SPI_CS_PORT     3
 #define SPI_OPS         &stm32_spi_ops
 #define SPI_EXTRA       &ad74413r_spi_extra_ip
 

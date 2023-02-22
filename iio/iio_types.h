@@ -79,7 +79,8 @@ enum iio_chan_type {
 	IIO_MAGN,
 	IIO_INCLI,
 	IIO_VELOCITY,
-	IIO_ANGL
+	IIO_ANGL,
+	IIO_ROT,
 };
 
 /**
@@ -91,7 +92,10 @@ enum iio_modifier {
 	IIO_MOD_X,
 	IIO_MOD_Y,
 	IIO_MOD_Z,
-	IIO_MOD_TEMP_AMBIENT
+	IIO_MOD_TEMP_AMBIENT,
+	IIO_MOD_PITCH,
+	IIO_MOD_YAW,
+	IIO_MOD_ROLL,
 };
 
 /**
@@ -118,17 +122,6 @@ enum iio_attribute_shared {
 	IIO_SHARED_BY_TYPE,
 	IIO_SHARED_BY_DIR,
 	IIO_SHARED_BY_ALL,
-};
-
-/**
- * @struct iio_context_attribute
- * @brief Structure holding the context attribute members
- */
-struct iio_context_attribute {
-	/** Attribute name */
-	const char *name;
-	/** Attribute value */
-	const char *value;
 };
 
 /**

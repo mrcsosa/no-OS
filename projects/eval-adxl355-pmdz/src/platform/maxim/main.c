@@ -57,7 +57,7 @@
 #endif
 
 /***************************************************************************//**
- * @brief Main function execution for STM32 platform.
+ * @brief Main function execution for Maxim platform.
  *
  * @return ret - Result of the enabled examples execution.
 *******************************************************************************/
@@ -106,7 +106,7 @@ int main()
 	if (ret)
 		return ret;
 
-	maxim_uart_stdio(uart_desc);
+	no_os_uart_stdio(uart_desc);
 	ret = dummy_example_main();
 #endif
 

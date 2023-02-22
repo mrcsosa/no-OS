@@ -45,23 +45,25 @@
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
-#ifdef DUMMY_EXAMPLE
 struct no_os_uart_init_param uip = {
 	.device_id = UART_DEVICE_ID,
+	.irq_id = UART_IRQ_ID,
+	.asynchronous_rx = true,
 	.baud_rate = UART_BAUDRATE,
 	.size = NO_OS_UART_CS_8,
 	.parity = NO_OS_UART_PAR_NO,
 	.stop = NO_OS_UART_STOP_1_BIT,
+	.platform_ops = UART_OPS,
 	.extra = &xuip,
 };
-#endif
 
 const struct no_os_i2c_init_param iip = {
 	.device_id = I2C_DEVICE_ID,
 	.max_speed_hz = 100000,
 	.slave_address = 0x4B,
 	.extra = NULL,
-	.platform_ops = I2C_OPS
+	.platform_ops = I2C_OPS,
+	.extra = &adt7420_i2c_extra,
 };
 
 struct adt7420_init_param adt7420_user_init = {

@@ -45,11 +45,9 @@
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
-#ifdef DUMMY_EXAMPLE
 struct max_uart_init_param adxl355_uart_extra_ip = {
 	.flow = UART_FLOW_DIS
 };
-#endif
 
 #ifdef IIO_TRIGGER_EXAMPLE
 /* Initialization for Sync pin GPIO. */
@@ -62,11 +60,12 @@ struct no_os_gpio_init_param adxl355_gpio_drdy_ip = {
 };
 
 struct max_gpio_init_param adxl355_gpio_extra_ip = {
-	.direction = 0,
+	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };
 #endif
 
 struct max_spi_init_param adxl355_spi_extra_ip  = {
 	.numSlaves = 1,
-	.polarity = SPI_SS_POL_LOW
+	.polarity = SPI_SS_POL_LOW,
+	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };

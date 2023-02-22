@@ -45,17 +45,16 @@
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
-#ifdef BASIC_EXAMPLE
 struct max_uart_init_param max11205_uart_extra_ip = {
 	.flow = UART_FLOW_DIS,
 };
-#endif
 
 struct max_gpio_init_param max11205_gpio_extra_ip = {
-	.direction = 0,
+	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };
 
 struct max_spi_init_param max11205_spi_extra_ip  = {
 	.numSlaves = 1,
 	.polarity = SPI_SS_POL_LOW,
+	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };

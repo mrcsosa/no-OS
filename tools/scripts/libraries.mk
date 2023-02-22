@@ -39,6 +39,7 @@ $(MBEDTLS_LIB_DIR)/libmbedx509.a: $(MBEDTLS_LIB_DIR)/libmbedcrypto.a
 $(MBEDTLS_LIB_DIR)/libmbedtls.a: $(MBEDTLS_LIB_DIR)/libmbedx509.a
 
 # Custom settings
+CFLAGS 		+= -I$(MBEDTLS_DIR)/include
 CFLAGS 		+= -I$(dir $(MBED_TLS_CONFIG_FILE)) \
 			-DMBEDTLS_CONFIG_FILE=\"$(notdir $(MBED_TLS_CONFIG_FILE))\"
 else
@@ -71,7 +72,7 @@ include $(NO-OS)/tools/scripts/mqtt_srcs.mk
 
 endif
 
-LIB_TARGETS			+= $(IIO_LIB) $(MBEDTLS_TARGETS) $(FATFS_LIB) $(MQTT_LIB)
+LIB_TARGETS			+= $(IIO_LIB) $(MBEDTLS_LIBS) $(FATFS_LIB) $(MQTT_LIB)
 EXTRA_LIBS_NAMES	= $(subst lib,,$(basename $(notdir $(EXTRA_LIBS))))
 LIB_FLAGS			+= $(addprefix -l,$(EXTRA_LIBS_NAMES))
 LIB_PATHS			+= $(addprefix -L,$(EXTRA_LIBS_PATHS))

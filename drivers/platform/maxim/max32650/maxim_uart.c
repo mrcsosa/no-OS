@@ -47,7 +47,6 @@
 #include "maxim_uart.h"
 #include "mxc_sys.h"
 #include "mxc_errors.h"
-#include "no_os_uart.h"
 #include "no_os_irq.h"
 #include "no_os_util.h"
 #include "no_os_lf256fifo.h"
@@ -66,11 +65,34 @@ static uint8_t c;
 /************************ Functions Definitions *******************************/
 /******************************************************************************/
 
-void uart_rx_callback(void *context)
+/**
+ * @brief Configure the VDDIO for the UART pins.
+ * @param device_id - the interface number.
+ * @param vssel - the voltage level of the interface.
+ * @return 0 in case of success, -EINVAL otherwise.
+ */
+static int32_t _max_uart_pins_config(uint32_t device_id, mxc_gpio_vssel_t vssel)
 {
-	struct no_os_uart_desc *d = context;
-	lf256fifo_write(d->rx_fifo, c);
-	no_os_uart_read_nonblocking(d, &c, 1);
+	mxc_gpio_cfg_t *uart_pins;
+
+	switch (device_id) {
+	case 0:
+		uart_pins = &gpio_cfg_uart0;
+		break;
+	case 1:
+		uart_pins = &gpio_cfg_uart1;
+		break;
+	case 2:
+		uart_pins = &gpio_cfg_uart2;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	uart_pins->vssel = vssel;
+	MXC_GPIO_Config(uart_pins);
+
+	return 0;
 }
 
 /**
@@ -80,8 +102,8 @@ void uart_rx_callback(void *context)
  * @param bytes_number - Number of bytes to read.
  * @return positive number of received bytes in case of success, negative error code otherwise.
  */
-int32_t no_os_uart_read(struct no_os_uart_desc *desc, uint8_t *data,
-			uint32_t bytes_number)
+static int32_t max_uart_read(struct no_os_uart_desc *desc, uint8_t *data,
+			     uint32_t bytes_number)
 {
 	int32_t ret;
 	uint32_t i = 0;
@@ -113,8 +135,8 @@ int32_t no_os_uart_read(struct no_os_uart_desc *desc, uint8_t *data,
  * @param bytes_number - Number of bytes to read.
  * @return 0 in case of success, errno codes otherwise.
  */
-int32_t no_os_uart_write(struct no_os_uart_desc *desc, const uint8_t *data,
-			 uint32_t bytes_number)
+static int32_t max_uart_write(struct no_os_uart_desc *desc, const uint8_t *data,
+			      uint32_t bytes_number)
 {
 	int32_t ret;
 
@@ -136,8 +158,9 @@ int32_t no_os_uart_write(struct no_os_uart_desc *desc, const uint8_t *data,
  * @param bytes_number - Number of bytes to read.
  * @return positive number of received bytes in case of success, negative error code otherwise.
  */
-int32_t no_os_uart_read_nonblocking(struct no_os_uart_desc *desc, uint8_t *data,
-				    uint32_t bytes_number)
+static int32_t max_uart_read_nonblocking(struct no_os_uart_desc *desc,
+		uint8_t *data,
+		uint32_t bytes_number)
 {
 	int32_t ret;
 	uint32_t id;
@@ -171,9 +194,9 @@ int32_t no_os_uart_read_nonblocking(struct no_os_uart_desc *desc, uint8_t *data,
  * @return 0 in case of success, errno codes otherwise.
  */
 
-int32_t no_os_uart_write_nonblocking(struct no_os_uart_desc *desc,
-				     const uint8_t *data,
-				     uint32_t bytes_number)
+static int32_t max_uart_write_nonblocking(struct no_os_uart_desc *desc,
+		const uint8_t *data,
+		uint32_t bytes_number)
 {
 	int32_t ret;
 	uint32_t id;
@@ -199,14 +222,21 @@ int32_t no_os_uart_write_nonblocking(struct no_os_uart_desc *desc,
 	return 0;
 }
 
+void uart_rx_callback(void *context)
+{
+	struct no_os_uart_desc *d = context;
+	lf256fifo_write(d->rx_fifo, c);
+	max_uart_read_nonblocking(d, &c, 1);
+}
+
 /**
  * @brief Initialize the UART communication peripheral.
  * @param desc - The UART descriptor.
  * @param param - The structure that contains the UART parameters.
  * @return 0 in case of success, errno codes otherwise.
  */
-int32_t no_os_uart_init(struct no_os_uart_desc **desc,
-			struct no_os_uart_init_param *param)
+static int32_t max_uart_init(struct no_os_uart_desc **desc,
+			     struct no_os_uart_init_param *param)
 {
 	int32_t ret;
 	int32_t stop, size, flow, parity;
@@ -223,9 +253,9 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		return -ENOMEM;
 
 	max_uart = calloc(1, sizeof(*max_uart));
-	if (!descriptor) {
+	if (!max_uart) {
 		ret = -ENOMEM;
-		goto error;
+		goto error_desc;
 	}
 	uart_regs = MXC_UART_GET_UART(param->device_id);
 	eparam = param->extra;
@@ -251,7 +281,7 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		break;
 	default:
 		ret = -EINVAL;
-		goto error;
+		goto error_max;
 	}
 
 	switch(param->size) {
@@ -269,7 +299,7 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		break;
 	default:
 		ret = -EINVAL;
-		goto error;
+		goto error_max;
 	}
 
 	switch(param->stop) {
@@ -281,7 +311,7 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		break;
 	default:
 		ret = -EINVAL;
-		goto error;
+		goto error_max;
 	}
 
 	switch (eparam->flow) {
@@ -296,38 +326,42 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		break;
 	default:
 		ret = -EINVAL;
-		goto error;
+		goto error_max;
 	}
 
 	ret = MXC_UART_Init(uart_regs, descriptor->baud_rate);
 	if (ret != E_NO_ERROR) {
 		ret = -EINVAL;
-		goto error;
+		goto error_max;
 	}
+
+	ret = _max_uart_pins_config(descriptor->device_id, eparam->vssel);
+	if (ret)
+		goto error_uart;
 
 	ret = MXC_UART_SetDataSize(uart_regs, size);
 	if (ret != E_NO_ERROR) {
 		ret = -EINVAL;
-		goto error;
+		goto error_uart;
 	}
 
 	ret = MXC_UART_SetParity(uart_regs, parity);
 	if (ret != E_NO_ERROR) {
 		ret = -EINVAL;
-		goto error;
+		goto error_uart;
 	}
 
 	ret = MXC_UART_SetStopBits(uart_regs, stop);
 	if (ret != E_NO_ERROR) {
 		ret = -EINVAL;
-		goto error;
+		goto error_uart;
 	}
 
 	ret = MXC_UART_SetFlowCtrl(uart_regs, flow, 8);
 
 	if (ret != E_NO_ERROR) {
 		ret = -EINVAL;
-		goto error;
+		goto error_uart;
 	}
 
 	*desc = descriptor;
@@ -335,7 +369,7 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 	if (param->asynchronous_rx) {
 		ret = lf256fifo_init(&descriptor->rx_fifo);
 		if (ret)
-			goto error;
+			goto error_uart;
 
 		struct no_os_irq_init_param nvic_ip = {
 			.platform_ops = &max_irq_ops,
@@ -343,7 +377,7 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 
 		ret = no_os_irq_ctrl_init(&max_uart->nvic, &nvic_ip);
 		if (ret)
-			goto error;
+			goto error_uart;
 
 		struct no_os_callback_desc uart_rx_cb = {
 			.callback = uart_rx_callback,
@@ -363,7 +397,7 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		if (ret)
 			goto error_nvic;
 
-		ret = no_os_uart_read_nonblocking(descriptor, &c, 1);
+		ret = max_uart_read_nonblocking(descriptor, &c, 1);
 		if (ret)
 			goto error_nvic;
 	}
@@ -371,20 +405,22 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 	return 0;
 error_nvic:
 	no_os_irq_ctrl_remove(max_uart->nvic);
-error:
-	free(max_uart);
-	free(descriptor);
+error_uart:
 	MXC_UART_Shutdown(uart_regs);
+error_max:
+	free(max_uart);
+error_desc:
+	free(descriptor);
 
 	return ret;
 }
 
 /**
- * @brief Free the resources allocated by no_os_uart_init().
+ * @brief Free the resources allocated by max_uart_init().
  * @param desc - The UART descriptor.
  * @return 0 in case of success, errno codes otherwise.
  */
-int32_t no_os_uart_remove(struct no_os_uart_desc *desc)
+static int32_t max_uart_remove(struct no_os_uart_desc *desc)
 {
 	if (!desc)
 		return -EINVAL;
@@ -400,7 +436,20 @@ int32_t no_os_uart_remove(struct no_os_uart_desc *desc)
  * @param desc - The UART descriptor.
  * @return -ENOSYS
  */
-uint32_t no_os_uart_get_errors(struct no_os_uart_desc *desc)
+static uint32_t max_uart_get_errors(struct no_os_uart_desc *desc)
 {
 	return -ENOSYS;
 }
+
+/**
+ * @brief Maxim platform specific UART platform ops structure
+ */
+const struct no_os_uart_platform_ops max_uart_ops = {
+	.init = &max_uart_init,
+	.read = &max_uart_read,
+	.write = &max_uart_write,
+	.read_nonblocking = &max_uart_read_nonblocking,
+	.write_nonblocking = &max_uart_write_nonblocking,
+	.get_errors = &max_uart_get_errors,
+	.remove = &max_uart_remove
+};

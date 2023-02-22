@@ -49,7 +49,7 @@
 #include "no_os_irq.h"
 #include "platform_init.h"
 #include "no_os_uart.h"
-#include "xilinx_uart.h"
+#include "aducm3029_uart.h"
 #include "uart_stdio.h"
 
 /***************************************************************************//**
@@ -77,6 +77,7 @@ int main(int argc, char *argv[])
 		.parity = NO_OS_UART_PAR_NO,
 		.size = NO_OS_UART_CS_8,
 		.stop = NO_OS_UART_STOP_1_BIT,
+		.platform_ops = &aducm_uart_ops,
 	};
 	struct no_os_irq_ctrl_desc *irq_dut;
 	int32_t platform_irq_init_par = 0;
@@ -100,7 +101,7 @@ int main(int argc, char *argv[])
 	ret = no_os_uart_init(&uart_dut, &uart_init_par);
 	if (ret < 0)
 		return ret;
-	init_uart_stdio(uart_dut);
+	no_os_uart_stdio(uart_dut);
 
 	ret = no_os_flash_init(&flash_dut, &flash_init_par);
 	if (ret < 0)
