@@ -74,6 +74,7 @@ static const unsigned int adis_3db_freqs[] = {
 /******************************************************************************/
 
 enum {
+	LOST_SAMPLES_COUNT,
 	DIAG_CHECKSUM_ERR,
 	DIAG_FLS_MEM_WR_CNT_EXCEED,
 	DIAG_ACCL_SELF_TEST_ERR,
@@ -119,6 +120,7 @@ enum {
 	SCR_PAD_REG2,
 	SCR_PAD_REG3,
 	FLASH_COUNT,
+	EXT_CLK_FREQ,
 };
 
 /******************************************************************************/
@@ -313,15 +315,20 @@ static int adis_iio_write_lpf(void *dev, char *buf, uint32_t len,
  * @param freq - The sampling frequency of the device.
  * @return 0 in case of success, error code otherwise.
  */
-static int adis_iio_get_freq(struct adis_dev* adis, unsigned int *freq)
+static int adis_iio_get_freq(struct adis_dev* adis, uint32_t *freq)
 {
 	unsigned int sample_rate;
 	unsigned int up_scale;
 	unsigned int dec_rate;
+	unsigned int sync_mode;
 	int ret;
 
 	sample_rate = adis->clk_freq;
-	if(adis->sync_mode == ADIS_SYNC_SCALED) {
+	ret = adis_read_sync_mode(adis, &sync_mode);
+	if (ret)
+		return ret;
+
+	if(sync_mode == ADIS_SYNC_SCALED) {
 		ret = adis_read_up_scale(adis, &up_scale);
 		if (ret)
 			return ret;
@@ -351,7 +358,7 @@ static int adis_iio_read_sampling_freq(void *dev, char *buf, uint32_t len,
 {
 	struct adis_iio_dev *iio_adis;
 	struct adis_dev *adis;
-	unsigned int freq;
+	uint32_t freq;
 	int ret;
 
 	if (!dev)
@@ -368,6 +375,8 @@ static int adis_iio_read_sampling_freq(void *dev, char *buf, uint32_t len,
 	if(ret)
 		return ret;
 
+	iio_adis->sampling_frequency = freq;
+
 	return iio_format_value(buf, len, IIO_VAL_INT, 1, (int32_t*)&freq);
 }
 
@@ -377,15 +386,20 @@ static int adis_iio_read_sampling_freq(void *dev, char *buf, uint32_t len,
  * @param freq - The desired sampling frequency of the device.
  * @return 0 in case of success, error code otherwise.
  */
-static int adis_iio_set_freq(struct adis_dev* adis, unsigned int freq)
+static int adis_iio_set_freq(struct adis_dev* adis, uint32_t freq)
 {
 	uint32_t scaled_rate;
 	unsigned int up_scale;
 	int ret;
 	unsigned int sample_rate = adis->clk_freq;
 	unsigned int dec_rate;
+	unsigned int sync_mode;
 
-	if (adis->sync_mode == ADIS_SYNC_SCALED) {
+	ret = adis_read_sync_mode(adis, &sync_mode);
+	if (ret)
+		return ret;
+
+	if(sync_mode == ADIS_SYNC_SCALED) {
 		scaled_rate = no_os_lowest_common_multiple(adis->clk_freq, freq);
 
 		/*
@@ -431,7 +445,7 @@ static int adis_iio_write_sampling_freq(void *dev, char *buf,
 {
 	struct adis_iio_dev *iio_adis;
 	struct adis_dev *adis;
-	unsigned int freq;
+	uint32_t freq;
 	int ret;
 
 	if (!dev)
@@ -448,7 +462,12 @@ static int adis_iio_write_sampling_freq(void *dev, char *buf,
 	if (ret)
 		return ret;
 
-	return adis_iio_set_freq(adis, freq);
+	ret = adis_iio_set_freq(adis, freq);
+	if (ret)
+		return ret;
+
+	/* Update sampling frequency */
+	return adis_iio_get_freq(adis, &iio_adis->sampling_frequency);
 }
 
 /**
@@ -581,6 +600,9 @@ static int adis_iio_read_debug_attrs(void *dev, char *buf, uint32_t len,
 	adis = iio_adis->adis_dev;
 
 	switch(priv) {
+	case LOST_SAMPLES_COUNT:
+		res = iio_adis->samples_lost;
+		break;
 	case DIAG_CHECKSUM_ERR:
 		adis_read_diag_checksum_err(adis, &res);
 		break;
@@ -680,6 +702,10 @@ static int adis_iio_read_debug_attrs(void *dev, char *buf, uint32_t len,
 	case FLASH_COUNT:
 		ret = adis_read_flshcnt(adis, &res);
 		break;
+	case EXT_CLK_FREQ:
+		res = adis->ext_clk;
+		ret = 0;
+		break;
 	default:
 		return -EINVAL;
 	}
@@ -735,17 +761,37 @@ static int adis_iio_write_debug_attrs(void *dev, char *buf, uint32_t len,
 	case SENS_BW:
 		return adis_write_sens_bw(adis, val);
 	case SYNC_MODE:
-		return adis_write_sync_mode(adis, val);
+		ret = adis_update_sync_mode(adis, val, adis->ext_clk);
+		if (ret)
+			return ret;
+
+		/* Update sampling frequency */
+		return adis_iio_get_freq(adis, &iio_adis->sampling_frequency);
 	case SYNC_POL:
 		return adis_write_sync_polarity(adis, val);
 	case DR_POL:
 		return adis_write_dr_polarity(adis, val);
 	case UP_SCALE:
-		return adis_write_up_scale(adis, val);
+		ret = adis_write_up_scale(adis, val);
+		if (ret)
+			return ret;
+
+		/* Update sampling frequency */
+		return adis_iio_get_freq(adis, &iio_adis->sampling_frequency);
 	case DEC_RATE:
-		return adis_write_dec_rate(adis, val);
+		ret = adis_write_dec_rate(adis, val);
+		if (ret)
+			return ret;
+
+		/* Update sampling frequency */
+		return adis_iio_get_freq(adis, &iio_adis->sampling_frequency);
 	case SOFTWARE_RESET_CMD:
-		return adis_cmd_sw_res(adis);
+		ret = adis_cmd_sw_res(adis);
+		if (ret)
+			return ret;
+
+		/* Update sampling frequency */
+		return adis_iio_get_freq(adis, &iio_adis->sampling_frequency);
 	case FLASH_MEM_TEST_CMD:
 		return adis_cmd_fls_mem_test(adis);
 	case FLASH_UPDATE_CMD:
@@ -753,13 +799,20 @@ static int adis_iio_write_debug_attrs(void *dev, char *buf, uint32_t len,
 	case SENSOR_SELF_TEST_CMD:
 		return adis_cmd_snsr_self_test(adis);
 	case FACT_CALIB_RESTORE_CMD:
-		return adis_cmd_fact_calib_restore(adis);
+		ret = adis_cmd_fact_calib_restore(adis);
+		if (ret)
+			return ret;
+
+		/* Update sampling frequency */
+		return adis_iio_get_freq(adis, &iio_adis->sampling_frequency);
 	case SCR_PAD_REG1:
 		return adis_write_usr_scr_1(adis, val);
 	case SCR_PAD_REG2:
 		return adis_write_usr_scr_2(adis, val);
 	case SCR_PAD_REG3:
 		return adis_write_usr_scr_3(adis, val);
+	case EXT_CLK_FREQ:
+		return adis_update_ext_clk_freq(adis, val);
 	default:
 		return -EINVAL;
 	}
@@ -851,30 +904,7 @@ static int adis_iio_read_raw(void *dev, char *buf, uint32_t len,
 int adis_iio_update_channels(void* dev, uint32_t mask)
 {
 	struct adis_iio_dev *iio_adis;
-
-	if (!dev)
-		return -EINVAL;
-
-	iio_adis = (struct adis_iio_dev *)dev;
-
-	iio_adis->active_channels = mask;
-	iio_adis->no_of_active_channels = no_os_hweight32(mask);
-
-	return 0;
-}
-
-/**
- * @brief Reads the number of given samples for the active channels.
- * @param dev     - The iio device structure.
- * @param samples - The number of samples to be read.
- * @param buff    - The buffer to be filled with the requested number of samples.
- * @return the size of the buffer in case of success, error code otherwise.
- */
-int adis_iio_read_samples(void* dev, int* buff, uint32_t samples)
-{
-	struct adis_iio_dev *iio_adis;
 	struct adis_dev *adis;
-	struct adis_burst_data burst_data;
 	int ret;
 
 	if (!dev)
@@ -887,40 +917,19 @@ int adis_iio_read_samples(void* dev, int* buff, uint32_t samples)
 
 	adis = iio_adis->adis_dev;
 
-	for(uint32_t i = 0; i < samples*iio_adis->no_of_active_channels;) {
-		ret = adis_read_burst_data(adis, &burst_data);
-		if (ret)
-			return ret;
+	iio_adis->active_channels = mask;
+	iio_adis->no_of_active_channels = no_os_hweight32(mask);
+	iio_adis->samples_lost = 0;
+	iio_adis->data_cntr = 0;
+	ret  = adis_read_burst_sel(adis, &iio_adis->burst_sel);
+	if (ret)
+		return ret;
 
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_GYRO_X))
-			buff[i++] = adis->burst_sel ? 0 : burst_data.x_gyro;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_GYRO_Y))
-			buff[i++] = adis->burst_sel ? 0 : burst_data.y_gyro;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_GYRO_Z))
-			buff[i++] = adis->burst_sel ? 0 : burst_data.z_gyro;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_ACCEL_X))
-			buff[i++] = adis->burst_sel ? 0 : burst_data.x_accl;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_ACCEL_Y))
-			buff[i++] = adis->burst_sel ? 0 : burst_data.y_accl;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_ACCEL_Z))
-			buff[i++] = adis->burst_sel ? 0 : burst_data.z_accl;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_TEMP))
-			buff[i++] = burst_data.temp_out;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_DELTA_ANGL_X))
-			buff[i++] = adis->burst_sel ?  burst_data.x_gyro : 0;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_DELTA_ANGL_Y))
-			buff[i++] = adis->burst_sel ? burst_data.y_gyro : 0;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_DELTA_ANGL_Z))
-			buff[i++] = adis->burst_sel ? burst_data.z_gyro : 0;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_DELTA_VEL_X))
-			buff[i++] = adis->burst_sel ? burst_data.x_accl : 0;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_DELTA_VEL_Y))
-			buff[i++] = adis->burst_sel ? burst_data.y_accl : 0;
-		if (iio_adis->active_channels & NO_OS_BIT(ADIS_DELTA_VEL_Z))
-			buff[i++] = adis->burst_sel ? burst_data.z_accl : 0;
-	}
+	ret = adis_read_burst_size(adis, &iio_adis->burst_size);
+	if (ret)
+		return ret;
 
-	return samples;
+	return adis_read_sync_mode(adis, &iio_adis->sync_mode);
 }
 
 /**
@@ -930,13 +939,20 @@ int adis_iio_read_samples(void* dev, int* buff, uint32_t samples)
  */
 int adis_iio_trigger_handler(struct iio_device_data *dev_data)
 {
-	int buff[13];
+	uint16_t buff[15];
 	uint8_t i = 0;
+	uint8_t buff_idx;
 
 	struct adis_iio_dev *iio_adis;
 	struct adis_dev *adis;
-	struct adis_burst_data burst_data;
 	int ret;
+	uint8_t temp_offset;
+	uint8_t data_cntr_offset;
+	uint16_t current_data_cntr;
+	uint32_t res1;
+	uint32_t res2;
+	uint32_t mask;
+	uint8_t chan;
 
 	if (!dev_data)
 		return -EINVAL;
@@ -948,38 +964,93 @@ int adis_iio_trigger_handler(struct iio_device_data *dev_data)
 
 	adis = iio_adis->adis_dev;
 
-	ret = adis_read_burst_data(adis, &burst_data);
+	ret = adis_read_burst_data(adis, sizeof(buff), buff, iio_adis->burst_size);
 	if (ret)
 		return ret;
 
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_GYRO_X))
-		buff[i++] = adis->burst_sel ? 0 : burst_data.x_gyro;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_GYRO_Y))
-		buff[i++] = adis->burst_sel ? 0 : burst_data.y_gyro;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_GYRO_Z))
-		buff[i++] = adis->burst_sel ? 0 : burst_data.z_gyro;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_ACCEL_X))
-		buff[i++] = adis->burst_sel ? 0 : burst_data.x_accl;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_ACCEL_Y))
-		buff[i++] = adis->burst_sel ? 0 : burst_data.y_accl;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_ACCEL_Z))
-		buff[i++] = adis->burst_sel ? 0 : burst_data.z_accl;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_TEMP))
-		buff[i++] = burst_data.temp_out;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_DELTA_ANGL_X))
-		buff[i++] = adis->burst_sel ? burst_data.x_gyro : 0;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_DELTA_ANGL_Y))
-		buff[i++] = adis->burst_sel ? burst_data.y_gyro : 0;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_DELTA_ANGL_Z))
-		buff[i++] = adis->burst_sel ? burst_data.z_gyro : 0;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_DELTA_VEL_X))
-		buff[i++] = adis->burst_sel ? burst_data.x_accl : 0;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_DELTA_VEL_Y))
-		buff[i++] = adis->burst_sel ? burst_data.y_accl : 0;
-	if (dev_data->buffer->active_mask & NO_OS_BIT(ADIS_DELTA_VEL_Z))
-		buff[i++] = adis->burst_sel ? burst_data.z_accl : 0;
+	temp_offset = iio_adis->burst_size ? 13 : 7;
+	data_cntr_offset = iio_adis->burst_size ? 14 : 8;
 
-	return iio_buffer_push_scan(dev_data->buffer, &buff[0]);
+	current_data_cntr = no_os_bswap_constant_16(buff[data_cntr_offset]);
+
+	if (iio_adis->data_cntr) {
+		if(current_data_cntr > iio_adis->data_cntr) {
+			if (iio_adis->sync_mode != ADIS_SYNC_SCALED)
+				iio_adis->samples_lost += current_data_cntr - iio_adis->data_cntr - 1;
+			else {
+				res1 = (current_data_cntr - iio_adis->data_cntr) * 49;
+				res2 = NO_OS_DIV_ROUND_CLOSEST(1000000, iio_adis->sampling_frequency);
+
+				if(res1 > res2) {
+					iio_adis->samples_lost += res1 / res2;
+					if(res1 % res2 < res2 / 2)
+						iio_adis->samples_lost--;
+				}
+			}
+
+		} else /* data counter overflowed occurred */
+			if (iio_adis->sync_mode != ADIS_SYNC_SCALED)
+				iio_adis->samples_lost += NO_OS_U16_MAX - iio_adis->data_cntr +
+							  current_data_cntr;
+	}
+
+	iio_adis->data_cntr = current_data_cntr;
+
+	mask = dev_data->buffer->active_mask;
+
+	for (chan = 0; chan < ADIS_NUM_CHAN; chan++) {
+		if (mask & (1 << chan)) {
+			switch(chan) {
+			case ADIS_TEMP:
+				iio_adis->data[i++] = 0;
+				iio_adis->data[i++] = buff[temp_offset];
+				break;
+			case ADIS_GYRO_X ... ADIS_ACCEL_Z:
+				/*
+				* The first 2 bytes on the received data are the
+				* DIAG_STAT reg, hence the +1 offset here...
+				*/
+				if(iio_adis->burst_sel) {
+					iio_adis->data[i++] = 0;
+					iio_adis->data[i++] = 0;
+				} else {
+					if (iio_adis->burst_size) {
+						/* upper 16 */
+						iio_adis->data[i++] = buff[chan * 2 + 2];
+						/* lower 16 */
+						iio_adis->data[i++] = buff[chan * 2 + 1];
+					} else {
+						iio_adis->data[i++] = buff[chan + 1];
+						/* lower not used */
+						iio_adis->data[i++] = 0;
+					}
+				}
+				break;
+			case ADIS_DELTA_ANGL_X ... ADIS_DELTA_VEL_Z:
+				if(!iio_adis->burst_sel) {
+					iio_adis->data[i++] = 0;
+					iio_adis->data[i++] = 0;
+				} else {
+					buff_idx = chan - ADIS_DELTA_ANGL_X;
+					if (iio_adis->burst_size) {
+						/* upper 16 */
+						iio_adis->data[i++] = buff[buff_idx * 2 + 2];
+						/* lower 16 */
+						iio_adis->data[i++] = buff[buff_idx * 2 + 1];
+					} else {
+						iio_adis->data[i++] = buff[buff_idx + 1];
+						/* lower not used */
+						iio_adis->data[i++] = 0;
+					}
+				}
+				break;
+			default:
+				break;
+			}
+		}
+	}
+
+	return iio_buffer_push_scan(dev_data->buffer, &iio_adis->data[0]);
 }
 
 struct iio_attribute adis_dev_attrs[] = {
@@ -999,6 +1070,11 @@ struct iio_attribute adis_dev_attrs[] = {
 };
 
 struct iio_attribute adis_debug_attrs[] = {
+	{
+		.name = "lost_samples_count",
+		.show = adis_iio_read_debug_attrs,
+		.priv = LOST_SAMPLES_COUNT,
+	},
 	{
 		.name = "diag_checksum_error_flag",
 		.show = adis_iio_read_debug_attrs,
@@ -1208,6 +1284,12 @@ struct iio_attribute adis_debug_attrs[] = {
 		.name = "flash_counter",
 		.show = adis_iio_read_debug_attrs,
 		.priv = FLASH_COUNT,
+	},
+	{
+		.name = "external_clock_frequency",
+		.show = adis_iio_read_debug_attrs,
+		.store = adis_iio_write_debug_attrs,
+		.priv = EXT_CLK_FREQ,
 	},
 	END_ATTRIBUTES_ARRAY
 };

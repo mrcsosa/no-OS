@@ -1,9 +1,9 @@
 /***************************************************************************//**
- *   @file   iio_example.c
- *   @brief  Implementation of IIO example for eval-adis project.
- *   @author RBolboac (ramona.bolboaca@analog.com)
+ *   @file   parameters.c
+ *   @brief  Definition of aducm3029 platform data used by demo_esp8266.
+ *   @author Antoniu Miclaus (antoniu.miclaus@analog.com)
 ********************************************************************************
- * Copyright 2022(c) Analog Devices, Inc.
+ * Copyright 2023(c) Analog Devices, Inc.
  *
  * All rights reserved.
  *
@@ -40,64 +40,11 @@
 /******************************************************************************/
 /***************************** Include Files **********************************/
 /******************************************************************************/
-#include "iio_example.h"
-#include "iio_adis16505.h"
-#include "common_data.h"
-#include "no_os_print_log.h"
+#include "parameters.h"
 
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
-#define DATA_BUFFER_SIZE 400
-
-/******************************************************************************/
-/************************ Variable Declarations ******************************/
-/******************************************************************************/
-uint8_t iio_data_buffer[DATA_BUFFER_SIZE*13*sizeof(int)];
-
-/******************************************************************************/
-/************************ Functions Definitions *******************************/
-/******************************************************************************/
-/***************************************************************************//**
- * @brief IIO example main execution.
- *
- * @return ret - Result of the example execution. If working correctly, will
- *               execute continuously function iio_app_run and will not return.
-*******************************************************************************/
-int iio_example_main()
-{
-	int ret;
-	struct adis_iio_dev *adis16505_iio_desc;
-	struct iio_app_desc *app;
-	struct iio_app_init_param app_init_param = { 0 };
-
-	struct iio_data_buffer data_buff = {
-		.buff = (void *)iio_data_buffer,
-		.size = DATA_BUFFER_SIZE*13*sizeof(int)
-	};
-
-	ret = adis16505_iio_init(&adis16505_iio_desc, &adis16505_ip);
-	if (ret)
-		return ret;
-
-	struct iio_app_device iio_devices[] = {
-		{
-			.name = "adis16505",
-			.dev = adis16505_iio_desc,
-			.dev_descriptor = adis16505_iio_desc->iio_dev,
-			.read_buff = &data_buff,
-		}
-	};
-
-	app_init_param.devices = iio_devices;
-	app_init_param.nb_devices = NO_OS_ARRAY_SIZE(iio_devices);
-#ifndef LINUX_PLATFORM
-	app_init_param.uart_init_params = adis16505_uart_ip;
-#endif
-
-	ret = iio_app_init(&app, app_init_param);
-	if (ret)
-		return ret;
-
-	return iio_app_run(app);
-}
+struct aducm_timer_init_param timer_extra_ip = {
+	.source_freq = PCLK_DIV256,
+};

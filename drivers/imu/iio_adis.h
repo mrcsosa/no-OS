@@ -65,6 +65,7 @@ enum adis16505_chan_type {
 	ADIS_DELTA_VEL_X,
 	ADIS_DELTA_VEL_Y,
 	ADIS_DELTA_VEL_Z,
+	ADIS_NUM_CHAN,
 };
 
 struct adis_iio_dev {
@@ -72,6 +73,13 @@ struct adis_iio_dev {
 	struct iio_device *iio_dev;
 	uint32_t active_channels;
 	uint8_t no_of_active_channels;
+	uint16_t samples_lost;
+	uint16_t data_cntr;
+	uint32_t sampling_frequency;
+	unsigned int burst_size;
+	unsigned int burst_sel;
+	unsigned int sync_mode;
+	uint16_t data[26];
 };
 
 /******************************************************************************/

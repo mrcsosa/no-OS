@@ -47,6 +47,7 @@
 #include "no_os_util.h"
 #include "no_os_alloc.h"
 #include "no_os_print_log.h"
+#include <string.h>
 
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
@@ -86,6 +87,15 @@
 #define ADIS_ZACCL_IDX_32_BIT_BURST	22
 #define ADIS_TEMP_IDX_32_BIT_BURST	26
 #define ADIS_CNT_IDX_32_BIT_BURST	28
+
+/******************************************************************************/
+/************************** Variable Definitions ******************************/
+/******************************************************************************/
+
+static const uint8_t burst_size_bytes[] = {
+	[ADIS_16_BIT_BURST_SIZE] = ADIS_MSG_SIZE_16_BIT_BURST,
+	[ADIS_32_BIT_BURST_SIZE] = ADIS_MSG_SIZE_32_BIT_BURST,
+};
 
 /******************************************************************************/
 /************************ Functions Definitions *******************************/
@@ -128,45 +138,12 @@ int adis_init(struct adis_dev **adis, const struct adis_data *data)
 
 	dev->data = data;
 
-	if(data->adis_ip->sync_mode > data->sync_mode_max) {
-		ret = -EINVAL;
-		goto error;
-	}
-
-	dev->sync_mode = data->adis_ip->sync_mode;
-
-	if (dev->sync_mode != ADIS_SYNC_DEFAULT && dev->sync_mode != ADIS_SYNC_OUTPUT) {
-		/* Sync pulse is external */
-		if (data->adis_ip->ext_clk < data->sync_rate_limit[dev->sync_mode].sync_min_rate
-		    || data->adis_ip->ext_clk >
-		    data->sync_rate_limit[dev->sync_mode].sync_max_rate) {
-			ret = -EINVAL;
-			goto error;
-		}
-
-		dev->ext_clk = data->adis_ip->ext_clk;
-		dev->clk_freq = dev->ext_clk;
-
-		if (dev->sync_mode == ADIS_SYNC_SCALED) {
-			/*
-			 * In sync scaled mode, the IMU sample rate is the clk_freq * sync_scale.
-			 * Hence, default the IMU sample rate to the highest multiple of the input
-			 * clock lower than the IMU max sample rate. The optimal range is
-			 * 1900-2100 sps...
-			 */
-			ret = adis_write_up_scale(dev, 2100 / dev->clk_freq);
-			if (ret)
-				goto error;
-		}
-	} else {
-		dev->clk_freq = data->int_clk;
-	}
-
 	ret = adis_initial_startup(dev);
 	if (ret)
 		goto error;
 
-	ret = adis_write_sync_mode(dev, dev->sync_mode);
+	ret = adis_update_sync_mode(dev, data->adis_ip->sync_mode,
+				    data->adis_ip->ext_clk);
 	if (ret)
 		goto error;
 
@@ -495,21 +472,52 @@ static void adis_update_diag_flags(struct adis_dev *adis, uint16_t diag_stat)
 }
 
 /**
- * @brief Read burst data.
- * @param adis       - The adis device.
- * @param burst_data - Array filled with read data.
+ * @brief Update external clock frequency.
+ * @param adis     - The adis device.
+ * @param clk_freq - New external clock frequency in Hz.
  * @return 0 in case of success, error code otherwise.
  */
-int adis_read_burst_data(struct adis_dev *adis,
-			 struct adis_burst_data *burst_data)
+int adis_update_ext_clk_freq(struct adis_dev *adis, unsigned int clk_freq)
 {
-	uint8_t msg_size;
+	unsigned int sync_mode;
 	int ret;
+	ret = adis_read_sync_mode(adis, &sync_mode);
+	if (ret)
+		return ret;
 
-	if (adis->burst_size == ADIS_16_BIT_BURST_SIZE)
-		msg_size = ADIS_MSG_SIZE_16_BIT_BURST;
-	else
-		msg_size = ADIS_MSG_SIZE_32_BIT_BURST;
+	if (sync_mode != ADIS_SYNC_DEFAULT && sync_mode != ADIS_SYNC_OUTPUT)
+		if (clk_freq < adis->data->sync_rate_limit[sync_mode].sync_min_rate
+		    || clk_freq > adis->data->sync_rate_limit[sync_mode].sync_max_rate)
+			return -EINVAL;
+
+	/* Allow setting of clock frequency in other modes because it will not be used. */
+	adis->ext_clk = clk_freq;
+
+	return 0;
+}
+
+/**
+ * @brief Read burst data.
+ * @param adis                 - The adis device.
+ * @param burst_data           - Array filled with read data.
+ * @param burst_data_size      - Size of burst_data.
+ * @param burst_size_selection - Burst size selection encoded value.
+ * @return 0 in case of success, error code otherwise.
+ */
+int adis_read_burst_data(struct adis_dev *adis, uint8_t burst_data_size,
+			 uint16_t *burst_data,
+			 uint8_t burst_size_selection)
+{
+	int ret;
+	uint8_t msg_size;
+
+	if (burst_size_selection > adis->data->burst_size_max)
+		return -EINVAL;
+
+	msg_size = burst_size_bytes[burst_size_selection];
+
+	if (burst_data_size > (msg_size - ADIS_CHECKSUM_SIZE))
+		burst_data_size = msg_size - ADIS_CHECKSUM_SIZE;
 
 	uint8_t buffer[msg_size + ADIS_READ_BURST_DATA_CMD_SIZE];
 	buffer[0] = ADIS_READ_BURST_DATA_CMD_MSB;
@@ -527,53 +535,11 @@ int adis_read_burst_data(struct adis_dev *adis,
 
 	adis->diag_flags.adis_diag_flags_bits.CHECKSUM_ERR = false;
 
-	if (adis->burst_size == ADIS_16_BIT_BURST_SIZE) {
-		burst_data->diag_stat = no_os_get_unaligned_be16(
-						&buffer[ADIS_DIAG_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->x_gyro = no_os_sign_extend16(no_os_get_unaligned_be16(
-					     &buffer[ADIS_XGYRO_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]),
-				     ADIS_SIGN_BIT_POS);
-		burst_data->y_gyro = no_os_sign_extend16(no_os_get_unaligned_be16(
-					     &buffer[ADIS_YGYRO_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]),
-				     ADIS_SIGN_BIT_POS);
-		burst_data->z_gyro = no_os_sign_extend16(no_os_get_unaligned_be16(
-					     &buffer[ADIS_ZGYRO_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]),
-				     ADIS_SIGN_BIT_POS);
-		burst_data->x_accl = no_os_sign_extend16(no_os_get_unaligned_be16(
-					     &buffer[ADIS_XACCL_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]),
-				     ADIS_SIGN_BIT_POS);
-		burst_data->y_accl = no_os_sign_extend16(no_os_get_unaligned_be16(
-					     &buffer[ADIS_YACCL_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]),
-				     ADIS_SIGN_BIT_POS);
-		burst_data->z_accl = no_os_sign_extend16(no_os_get_unaligned_be16(
-					     &buffer[ADIS_ZACCL_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]),
-				     ADIS_SIGN_BIT_POS);
-		burst_data->temp_out = no_os_get_unaligned_be16(
-					       &buffer[ADIS_TEMP_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->data_cntr = no_os_get_unaligned_be16(
-						&buffer[ADIS_CNT_IDX_16_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-	} else {
-		burst_data->diag_stat = no_os_get_unaligned_be16(
-						&buffer[ADIS_DIAG_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->x_gyro = no_os_get_unaligned_be32(
-					     &buffer[ADIS_XGYRO_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->y_gyro = no_os_get_unaligned_be32(
-					     &buffer[ADIS_YGYRO_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->z_gyro =no_os_get_unaligned_be32(&buffer[ADIS_ZGYRO_IDX_32_BIT_BURST
-				    + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->x_accl = no_os_get_unaligned_be32(
-					     &buffer[ADIS_XACCL_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->y_accl = no_os_get_unaligned_be32(
-					     &buffer[ADIS_YACCL_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->z_accl = no_os_get_unaligned_be32(
-					     &buffer[ADIS_ZACCL_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->temp_out = no_os_get_unaligned_be16(
-					       &buffer[ADIS_TEMP_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-		burst_data->data_cntr = no_os_get_unaligned_be16(
-						&buffer[ADIS_CNT_IDX_32_BIT_BURST + ADIS_READ_BURST_DATA_CMD_SIZE]);
-	}
+	/* Copy read data to buffer, based on burst_data_size value */
+	memcpy(burst_data, &buffer[ADIS_READ_BURST_DATA_CMD_SIZE], burst_data_size);
 
-	adis_update_diag_flags(adis, burst_data->diag_stat);
+	/* Update diagnosis flags at each reading */
+	adis_update_diag_flags(adis, buffer[ADIS_READ_BURST_DATA_CMD_SIZE]);
 
 	return 0;
 }
@@ -1410,7 +1376,6 @@ int adis_read_burst_size(struct adis_dev *adis, unsigned int *burst_size)
 		return ret;
 
 	*burst_size = reg_val & reg.mask ? 1 : 0;
-	adis->burst_size = *burst_size;
 
 	return 0;
 }
@@ -1432,7 +1397,6 @@ int adis_write_burst_size(struct adis_dev *adis, unsigned int burst_size)
 	ret = adis_update_bits_base(adis, reg.addr, reg.mask, burst_size, reg.size);
 	if (ret)
 		return ret;
-	adis->burst_size = burst_size;
 
 	no_os_udelay(adis->data->timeouts->msc_reg_update_us);
 
@@ -1456,7 +1420,6 @@ int adis_read_burst_sel(struct adis_dev *adis, unsigned int *burst_sel)
 		return ret;
 
 	*burst_sel = reg_val & reg.mask ? 1 : 0;
-	adis->burst_sel = *burst_sel;
 
 	return 0;
 }
@@ -1478,8 +1441,6 @@ int adis_write_burst_sel(struct adis_dev *adis, unsigned int burst_sel)
 	ret = adis_update_bits_base(adis, reg.addr, reg.mask, burst_sel, reg.size);
 	if (ret)
 		return ret;
-
-	adis->burst_sel = burst_sel;
 
 	no_os_udelay(adis->data->timeouts->msc_reg_update_us);
 
@@ -1646,30 +1607,48 @@ int adis_read_sync_mode(struct adis_dev *adis, unsigned int *sync_mode)
 }
 
 /**
- * @brief Write synchronization mode encoded value.
+ * @brief Update synchronization mode.
  * @param adis      - The adis device.
- * @param sync_mode - The synchronization mode encoded value to write.
+ * @param sync_mode - The synchronization mode encoded value to update.
+ * @param ext_clk   - The external clock frequency to update, will be ignored
+ * if sync_mode is different from ADIS_SYNC_SCALED and ADIS_SYNC_DIRECT.
  * @return 0 in case of success, error code otherwise.
  */
-int adis_write_sync_mode(struct adis_dev *adis, unsigned int sync_mode)
+int adis_update_sync_mode(struct adis_dev *adis, unsigned int sync_mode,
+			  unsigned int ext_clk)
 {
-	struct adis_reg reg = adis->data->reg_map->sync_mode;
 	int ret;
+	struct adis_reg reg = adis->data->reg_map->sync_mode;
 
-	if (sync_mode > adis->data->sync_mode_max)
+	if(sync_mode > adis->data->sync_mode_max)
 		return -EINVAL;
 
-	ret = adis_update_bits_base(adis, reg.addr, reg.mask, sync_mode, reg.size);
-	if (ret)
-		return ret;
+	if (sync_mode != ADIS_SYNC_DEFAULT && sync_mode != ADIS_SYNC_OUTPUT) {
+		/* Sync pulse is external */
+		if (ext_clk < adis->data->sync_rate_limit[sync_mode].sync_min_rate
+		    || ext_clk > adis->data->sync_rate_limit[sync_mode].sync_max_rate)
+			return -EINVAL;
 
-	adis->sync_mode = sync_mode;
+		adis->ext_clk = ext_clk;
+		adis->clk_freq = ext_clk;
 
-	/* Update clock frequency is external clock is used */
-	if(sync_mode == ADIS_SYNC_DIRECT || sync_mode == ADIS_SYNC_SCALED)
-		adis->clk_freq = adis->ext_clk;
+		if (sync_mode == ADIS_SYNC_SCALED) {
+			/*
+			 * In sync scaled mode, the IMU sample rate is the clk_freq * sync_scale.
+			 * Hence, default the IMU sample rate to the highest multiple of the input
+			 * clock lower than the IMU max sample rate. The optimal range is
+			 * 1900-2100 sps...
+			 */
+			ret = adis_write_up_scale(adis, 2100 / adis->clk_freq);
+			if (ret)
+				return ret;
+		}
 
-	return 0;
+	} else {
+		adis->clk_freq = adis->data->int_clk;
+	}
+
+	return adis_update_bits_base(adis, reg.addr, reg.mask, sync_mode, reg.size);
 }
 
 /**
@@ -1794,6 +1773,24 @@ int adis_read_up_scale(struct adis_dev *adis, unsigned int *up_scale)
 int adis_write_up_scale(struct adis_dev *adis, unsigned int up_scale)
 {
 	struct adis_reg reg = adis->data->reg_map->up_scale;
+	unsigned int sync_mode;
+	int ret;
+
+	if(up_scale > reg.mask)
+		return -EINVAL;
+
+	ret = adis_read_sync_mode(adis, &sync_mode);
+	if (ret)
+		return ret;
+
+	/* Allow for any value to be written unless the device is in SYNC_SCALED synchronization mode.
+	 * If the device is in SYNC_SCALED syncronization mode, make sure the result for clk_freq * up_scale
+	is between 1900 and 2100 Hz, otherwise return -EINVAL.
+	*/
+	if (sync_mode == ADIS_SYNC_SCALED && (adis->clk_freq*up_scale > 2100
+					      || adis->clk_freq*up_scale < 1900))
+		return -EINVAL;
+
 	return adis_write_reg(adis, reg.addr, up_scale, reg.size);
 }
 
@@ -2001,6 +1998,10 @@ int adis_read_usr_scr_1(struct adis_dev *adis, unsigned int *usr_scr_1)
 int adis_write_usr_scr_1(struct adis_dev *adis, unsigned int usr_scr_1)
 {
 	struct adis_reg reg = adis->data->reg_map->usr_scr_1;
+
+	if (usr_scr_1 > reg.mask)
+		return -EINVAL;
+
 	return adis_write_reg(adis, reg.addr, usr_scr_1, reg.size);
 }
 
@@ -2025,6 +2026,10 @@ int adis_read_usr_scr_2(struct adis_dev *adis, unsigned int *usr_scr_2)
 int adis_write_usr_scr_2(struct adis_dev *adis, unsigned int usr_scr_2)
 {
 	struct adis_reg reg = adis->data->reg_map->usr_scr_2;
+
+	if (usr_scr_2 > reg.mask)
+		return -EINVAL;
+
 	return adis_write_reg(adis, reg.addr, usr_scr_2, reg.size);
 }
 
@@ -2049,6 +2054,10 @@ int adis_read_usr_scr_3(struct adis_dev *adis, unsigned int *usr_scr_3)
 int adis_write_usr_scr_3(struct adis_dev *adis, unsigned int usr_scr_3)
 {
 	struct adis_reg reg = adis->data->reg_map->usr_scr_3;
+
+	if (usr_scr_3 > reg.mask)
+		return -EINVAL;
+
 	return adis_write_reg(adis, reg.addr, usr_scr_3, reg.size);
 }
 
