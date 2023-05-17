@@ -340,6 +340,7 @@ int iio_app_init(struct iio_app_desc **app,
 		iio_init_devs[i].name = app_init_param.devices[i].name;
 		iio_init_devs[i].dev = app_init_param.devices[i].dev;
 		iio_init_devs[i].dev_descriptor = app_init_param.devices[i].dev_descriptor;
+		iio_init_devs[i].trigger_id = app_init_param.devices[i].default_trigger_id;
 		buff = app_init_param.devices[i].read_buff ?
 		       app_init_param.devices[i].read_buff :
 		       app_init_param.devices[i].write_buff;
@@ -397,8 +398,11 @@ int iio_app_run(struct iio_app_desc *app)
 		if (status && status != -EAGAIN && status != -ENOTCONN
 		    && status != -NO_OS_EOVERRUN)
 			return status;
-		if (app->post_step_callback)
+		if (app->post_step_callback) {
 			status = app->post_step_callback(app->arg);
+			if (status)
+				return status;
+		}
 	} while (true);
 }
 

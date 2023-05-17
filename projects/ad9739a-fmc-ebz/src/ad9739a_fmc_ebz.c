@@ -145,7 +145,8 @@ int main(void)
 		.name = "ad9739a_dac",
 		.base =	TX_CORE_BASEADDR,
 		.num_channels = 1,
-		.channels = &ad9739a_channels[0]
+		.channels = &ad9739a_channels[0],
+		.rate = 3
 	};
 	struct axi_dac	*ad9739a_core;
 
@@ -261,7 +262,7 @@ int main(void)
 	};
 	struct iio_app_device devices[] = {
 		IIO_APP_DEVICE("ad9739a_dev", iio_axi_dac_desc, dev_desc,
-			       &read_buff, NULL),
+			       &read_buff, NULL, NULL),
 	};
 
 	app_init_param.devices = devices;

@@ -195,7 +195,8 @@ int main(void)
 	struct axi_dac_init tx_dac_init = {
 		.name = "tx_dac",
 		.base = TX_CORE_BASEADDR,
-		.channels = NULL
+		.channels = NULL,
+		.rate = 3
 	};
 	struct axi_dac *tx_dac;
 	struct axi_dmac_init rx_dmac_init = {
@@ -367,8 +368,8 @@ int main(void)
 	};
 
 	struct iio_app_device devices[] = {
-		IIO_APP_DEVICE("axi_adc", iio_axi_adc_desc, adc_dev_desc, &read_buff, NULL),
-		IIO_APP_DEVICE("axi_dac", iio_axi_dac_desc, dac_dev_desc, NULL, &write_buff)
+		IIO_APP_DEVICE("axi_adc", iio_axi_adc_desc, adc_dev_desc, &read_buff, NULL, NULL),
+		IIO_APP_DEVICE("axi_dac", iio_axi_dac_desc, dac_dev_desc, NULL, &write_buff, NULL)
 	};
 
 	app_init_param.devices = devices;

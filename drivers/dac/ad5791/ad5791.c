@@ -306,11 +306,11 @@ int32_t ad5791_soft_instruction(struct ad5791_dev *dev,
  *
  * @param dev        - The device structure.
  * @param setup_word - Is a 24-bit value that sets or clears the Control Register
- *                    bits : RBUF bit(AD5791_CTRL_RBUF),
- *                           BIN/2sC bit(AD5791_CTRL_BIN2SC),
- *                           SDODIS bit(AD5791_CTRL_SDODIS) and
+ *                    bits : RBUF bit(AD5791_CTRL_RBUF(x)),
+ *                           BIN/2sC bit(AD5791_CTRL_BIN2SC(x)),
+ *                           SDODIS bit(AD5791_CTRL_SDODIS(x)) and
  *                           LINCOMP bits(AD5791_CTRL_LINCOMP(x)).
- *                    Example: AD5791_CTRL_BIN2SC | AD5791_CTRL_RBUF - sets
+ *                    Example: AD5791_CTRL_BIN2SC(1) | AD5791_CTRL_RBUF(1) - sets
  *                             the DAC register to use offset binary coding and
  *                             powers down the internal output amplifier.
  *
@@ -333,9 +333,9 @@ int32_t ad5791_setup(struct ad5791_dev *dev,
 	old_ctrl = val;
 	/* Clear LINCOMP, SDODIS, BIN2SC and RBUF bits. */
 	old_ctrl = old_ctrl & ~(AD5791_CTRL_LINCOMP(-1) |
-				AD5791_CTRL_SDODIS |
-				AD5791_CTRL_BIN2SC |
-				AD5791_CTRL_RBUF);
+				AD5791_CTRL_SDODIS_MASK |
+				AD5791_CTRL_BIN2SC_MASK |
+				AD5791_CTRL_RBUF_MASK);
 	/* Sets the new state provided by the user. */
 	new_ctrl = old_ctrl | setup_word;
 	status = ad5791_set_register_value(dev,
@@ -343,4 +343,62 @@ int32_t ad5791_setup(struct ad5791_dev *dev,
 					   new_ctrl);
 
 	return status;
+}
+
+/***************************************************************************//**
+ * @brief SPI write to device using a mask.
+ *
+ * @param dev              - The device structure.
+ * @param register_address - Address of the register.
+ *                          Example:
+ *                          AD5791_REG_DAC          - DAC register
+ *                          AD5791_REG_CTRL         - Control register
+ *                          AD5791_REG_CLR_CODE     - Clearcode register
+ *                          AD5791_CMD_WR_SOFT_CTRL - Software control register
+ * @param mask	- The mask.
+ * @param value - The register data.
+ *
+ * @return 0 in case of success, negative error code otherwise.
+*******************************************************************************/
+int ad5791_spi_write_mask(struct ad5791_dev *dev,
+			  uint8_t register_address,
+			  uint32_t mask,
+			  uint32_t value)
+{
+	int status;
+	uint32_t reg_data;
+
+	if(!dev)
+		return -EINVAL;
+
+	status = ad5791_get_register_value(dev, register_address, &reg_data);
+	if (status)
+		return status;
+
+	reg_data &= ~mask;
+	reg_data |= value;
+
+	return ad5791_set_register_value(dev, register_address, reg_data);
+}
+
+/***************************************************************************//**
+ * @brief	Set Linearity error compensation based on the reference voltage span.
+ *
+ * @param	dev		- The device structure.
+ * @param	v_span	- voltage span to set the corresponding lin_comp value.
+ * @return	0 in case of success, negative error code otherwise.
+ */
+int ad5791_set_lin_comp(struct ad5791_dev *dev,
+			enum ad5791_lin_comp_select v_span)
+{
+	if(!dev || (dev->act_device != ID_AD5781 && dev->act_device != ID_AD5791))
+		return -EINVAL;
+
+	if (!v_span)
+		v_span |= NO_OS_BIT(4);
+
+	return ad5791_spi_write_mask(dev,
+				     AD5791_REG_CTRL,
+				     AD5791_CTRL_LINCOMP_MASK,
+				     AD5791_CTRL_LINCOMP(v_span));
 }

@@ -52,6 +52,8 @@ struct stm32_gpio_init_param {
 	uint32_t mode;
 	/** Speed grade */
 	uint32_t speed;
+	/** Alternate functionality */
+	uint32_t alternate;
 };
 
 /**

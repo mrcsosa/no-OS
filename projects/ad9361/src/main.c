@@ -161,7 +161,8 @@ struct axi_dac_init tx_dac_init = {
 	"cf-ad9361-dds-core-lpc",
 	TX_CORE_BASEADDR,
 	4,
-	NULL
+	NULL,
+	3
 };
 struct axi_dmac_init rx_dmac_init = {
 	"rx_dmac",
@@ -554,8 +555,13 @@ int main(void)
 	default_init_param.gpio_cal_sw2.number = -1;
 #endif
 
-	if (AD9364_DEVICE)
+	if (AD9364_DEVICE) {
 		default_init_param.dev_sel = ID_AD9364;
+		tx_dac_init.num_channels = 2;
+		tx_dac_init.rate = 1;
+		rx_adc_init.num_channels = 2;
+		rx_adc_init.num_slave_channels = 0;
+	}
 	if (AD9363A_DEVICE)
 		default_init_param.dev_sel = ID_AD9363A;
 
@@ -977,13 +983,13 @@ int main(void)
 #endif
 
 	struct iio_app_device devices[] = {
-		IIO_APP_DEVICE("cf-ad9361-lpc", iio_axi_adc_desc, adc_dev_desc, &read_buff, NULL),
-		IIO_APP_DEVICE("cf-ad9361-dds-core-lpc", iio_axi_dac_desc, dac_dev_desc, NULL, &write_buff),
-		IIO_APP_DEVICE("ad9361-phy", ad9361_phy, ad9361_dev_desc, NULL, NULL),
+		IIO_APP_DEVICE("cf-ad9361-lpc", iio_axi_adc_desc, adc_dev_desc, &read_buff, NULL, NULL),
+		IIO_APP_DEVICE("cf-ad9361-dds-core-lpc", iio_axi_dac_desc, dac_dev_desc, NULL, &write_buff, NULL),
+		IIO_APP_DEVICE("ad9361-phy", ad9361_phy, ad9361_dev_desc, NULL, NULL, NULL),
 #ifdef FMCOMMS5
-		IIO_APP_DEVICE("cf-ad9361-B", iio_axi_adc_b_desc, adc_b_dev_desc, &read_buff, NULL),
-		IIO_APP_DEVICE("cf-ad9361-dds-core-B", iio_axi_dac_b_desc, dac_b_dev_desc, NULL, &write_buff),
-		IIO_APP_DEVICE("ad9361-phy-B", ad9361_phy_b, ad9361_b_dev_desc, NULL, NULL)
+		IIO_APP_DEVICE("cf-ad9361-B", iio_axi_adc_b_desc, adc_b_dev_desc, &read_buff, NULL, NULL),
+		IIO_APP_DEVICE("cf-ad9361-dds-core-B", iio_axi_dac_b_desc, dac_b_dev_desc, NULL, &write_buff, NULL),
+		IIO_APP_DEVICE("ad9361-phy-B", ad9361_phy_b, ad9361_b_dev_desc, NULL, NULL, NULL)
 #endif
 	};
 

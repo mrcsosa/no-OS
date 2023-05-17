@@ -731,6 +731,8 @@ int32_t ad7779_get_power_mode(ad7779_dev *dev,
  * @param ref_type - The reference type.
  *		     Accepted values: AD7779_EXT_REF
  *				      AD7779_INT_REF
+ *				      AD7779_EXT_SUPPLY
+ *				      AD7779_EXT_REF_INV
  * @return 0 in case of success, negative error code otherwise.
  */
 int32_t ad7779_set_reference_type(ad7779_dev *dev,
@@ -738,13 +740,29 @@ int32_t ad7779_set_reference_type(ad7779_dev *dev,
 {
 	int32_t ret;
 
+	if (ref_type == AD7779_INT_REF)
+		ret = ad7779_spi_int_reg_write_mask(dev,
+						    AD7779_REG_GENERAL_USER_CONFIG_1,
+						    AD7779_PDB_REFOUT_BUF,
+						    AD7779_PDB_REFOUT_BUF);
+	else
+		ret = ad7779_spi_int_reg_write_mask(dev,
+						    AD7779_REG_GENERAL_USER_CONFIG_1,
+						    AD7779_PDB_REFOUT_BUF,
+						    0);
+	if (ret)
+		return ret;
+
 	ret = ad7779_spi_int_reg_write_mask(dev,
 					    AD7779_REG_ADC_MUX_CONFIG,
 					    AD7779_REF_MUX_CTRL(0x3),
 					    AD7779_REF_MUX_CTRL(ref_type));
+	if (ret)
+		return ret;
+
 	dev->ref_type = ref_type;
 
-	return ret;
+	return 0;
 }
 
 /**

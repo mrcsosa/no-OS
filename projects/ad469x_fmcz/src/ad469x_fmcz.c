@@ -165,6 +165,7 @@ int main()
 		.period_ns = 1000,	/* 1Mhz */
 		.duty_cycle_ns = 10,
 		.polarity = NO_OS_PWM_POLARITY_HIGH,
+		.platform_ops = &axi_pwm_ops,
 		.extra = &axi_pwm_init,
 	};
 
@@ -237,7 +238,7 @@ int main()
 
 	struct iio_app_device devices[] = {
 		IIO_APP_DEVICE("ad469x", dev, &ad469x_iio_descriptor,
-			       &read_buff, NULL),
+			       &read_buff, NULL, NULL),
 	};
 
 	app_init_param.devices = devices;

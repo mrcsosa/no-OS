@@ -118,6 +118,7 @@ int main()
 		.period_ns = 500,	/* 2Mhz */
 		.duty_cycle_ns = AD463X_TRIGGER_PULSE_WIDTH_NS,
 		.polarity = NO_OS_PWM_POLARITY_HIGH,
+		.platform_ops = &axi_pwm_ops,
 		.extra = &axi_pwm_init,
 	};
 
@@ -227,7 +228,7 @@ int main()
 
 	struct iio_app_device devices[] = {
 		IIO_APP_DEVICE("ad463x", iio_ad463x, &iio_ad463x->iio_dev_desc,
-			       &rd_buff, NULL),
+			       &rd_buff, NULL, NULL),
 	};
 
 	app_init_param.devices = devices;

@@ -24,19 +24,21 @@ Examples:\n
 
 	Note: HDF_SERVER should be sent as enviroment variables:
 		Ex: export HDF_SERVER=ala.bala.com/hdf_builds
+
+	Note: When using custom location for the build output (i.e. export_dir, log_dir, builds_dir) specify the entire path.
 '''
 
 def parse_input():
 	parser = argparse.ArgumentParser(description=description_help,\
 				formatter_class=argparse.RawTextHelpFormatter)
 	parser.add_argument('noos_location', help="Path to noos location")
-	parser.add_argument('-export_dir', default='exports', help="Path where to save files")
-	parser.add_argument('-log_dir', default='logs', help="Path where to save log files")
+	parser.add_argument('-export_dir', default=(os.getcwd() + '/exports'), help="Path where to save files")
+	parser.add_argument('-log_dir', default=(os.getcwd() + '/logs'), help="Path where to save log files")
 	parser.add_argument('-project', help="Name of project to be built")
 	parser.add_argument('-platform', help="Name of platform to be built")
 	parser.add_argument('-hardware', help="Name of hardware to be built")
 	parser.add_argument('-build_name', help="Name of built type to be built")
-	parser.add_argument('-builds_dir', help="Directory where to build projects")
+	parser.add_argument('-builds_dir', default=(os.getcwd() +'/builds'), help="Directory where to build projects")
 	args = parser.parse_args()
 
 	return (args.noos_location, args.export_dir, args.log_dir, args.project,
@@ -204,6 +206,8 @@ class BuildConfig:
 			self.export_file = self.export_file.replace('.elf', '.hex')
 		if (platform == 'pico'):
 			self.export_file = self.export_file.replace('.elf', '.uf2')
+		if (platform == 'mbed'):
+			self.export_file = self.export_file.replace('.elf', '.bin')
 
 	def build(self):
 		global log_file
