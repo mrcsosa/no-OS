@@ -7,6 +7,8 @@ import subprocess
 import multiprocessing
 import sys
 import filecmp
+import requests
+import re
 
 TGREEN =  '\033[32m' # Green Text	
 TBLUE =  '\033[34m' # Green Text	
@@ -39,13 +41,20 @@ def parse_input():
 	parser.add_argument('-hardware', help="Name of hardware to be built")
 	parser.add_argument('-build_name', help="Name of built type to be built")
 	parser.add_argument('-builds_dir', default=(os.getcwd() +'/builds'), help="Directory where to build projects")
+	parser.add_argument('-hdl_branch', default='main', help="Name of hdl_branch from which to downlaod hardware or \
+					 we can also specify a timestamp folder from the specific branch but needs to have a specific format, \
+					 of 'branch_name/YYYY_mm_dd-HH_MM_SS' example: main/2023_09_20-06_52_29")
 	args = parser.parse_args()
 
 	return (args.noos_location, args.export_dir, args.log_dir, args.project,
-		args.platform, args.build_name, args.builds_dir, args.hardware)
+		args.platform, args.build_name, args.builds_dir, args.hardware, args.hdl_branch)
 
 ERR = 0
 LOG_START = " -> "
+USER = os.environ.get('USER')
+TOKEN = os.environ.get('TOKEN')
+BRANCH = os.environ.get('BRANCH')
+blacklist_url = str(os.environ.get('BLACKLIST_URL')).format(BRANCH)
 
 def log(msg):
 	print(TGREEN + LOG_START + TWHITE + msg)
@@ -58,6 +67,7 @@ def log_success(msg):
 
 DEFAULT_LOG_FILE = 'log.txt'
 log_file = DEFAULT_LOG_FILE
+create_dir_cmd = "test -d {0} || mkdir -p {0}"
 
 def shell_source(script):
 	"""
@@ -78,13 +88,35 @@ def shell_source(script):
 
 	os.environ.update(env)
 
+def re_run_stm32(cmd):
+	global ERR
+	log("Project first failed, rebuild to check if the error persists")
+	log("make reset")
+	cmd_reset = cmd.replace("all", "reset")
+	err = os.system(cmd_reset + ' >> %s 2>&1' % log_file)
+	if err != 0:
+		ERR = 1
+		log_err("ERROR")
+		return err
+
+	log("make all")
+	err = os.system(cmd + ' >> %s 2>&1' % log_file)
+	if err != 0:
+		log("Error persits, not a random fail, please check!")
+	else:
+		log("First fail was possibly a random one")
+	return err
+
 def run_cmd(cmd):
 	global ERR
 	tmp = cmd.split(' ')
 	if tmp[0] == 'make':
 		log('make ' + tmp[-1])
 	else:
-		log(cmd)
+		if tmp[2] == 'make':
+			log('make ' + tmp[-1])
+		else:
+			log(cmd)
 	sys.stdout.flush()
 	err = os.system('echo %s >> %s' % (cmd, log_file))
 	if err != 0:
@@ -92,6 +124,11 @@ def run_cmd(cmd):
 		return err
 	err = os.system(cmd + ' >> %s 2>&1' % log_file)
 	if err != 0:
+		if 'timeout' in cmd:
+			err = re_run_stm32(cmd)
+			if err == 0:
+				return err
+
 		log_err("ERROR")
 		log("See log %s " \
 		    "-- Use cat (linux) or type (windows) to see colored output"
@@ -100,28 +137,6 @@ def run_cmd(cmd):
 
 	return err
 
-
-def run_cmd_stm(cmd):
-	global ERR
-	tmp = cmd.split(' ')
-	if tmp[0] == 'make':
-		log('make ' + tmp[-1])
-	else:
-		log(cmd)
-	sys.stdout.flush()
-	err = os.system('echo %s >> %s' % (cmd, log_file))
-	if err != 0:
-		ERR = 1
-		return err
-	err = os.system(cmd + ' >> %s 2>&1' % log_file)
-	if err != 0 and err != 31744 and tmp[0] != 'cp':
-		log_err("ERROR")
-		log("See log %s " \
-		    "-- Use cat (linux) or type (windows) to see colored output"
-		    % log_file)
-		ERR = 1
-
-	return err
 def to_blue(str):
 	return TBLUE + str + TWHITE
 
@@ -134,22 +149,71 @@ else:
 
 HW_DIR_NAME = 'hardware'
 NEW_HW_DIR_NAME = 'new_hardware'
-FILE_TO_DOWNLOAD = 'latest.zip'
 
-def download_all_hw(builds_dir):
+def process_blacklist():
+	blacklist = []
+	err = os.system('wget --http-user={} --http-password={} --auth-no-challenge \'{}\' -O blacklist.txt >> {} 2>&1'
+				.format(USER, TOKEN, blacklist_url, log_file))
+	if err != 0 or (not os.path.isfile('blacklist.txt')):
+		log_err('Can not download blacklist file')
+		return blacklist
+	file = open('blacklist.txt', 'r')
+	for line in file.readlines():
+		project = line.split('#')[0].rstrip().replace('.', '_')
+		if project != '':
+			blacklist.append(project)
+	return blacklist
+
+def configfile_and_download_all_hw(_platform, noos, _builds_dir, hdl_branch):
+	try:
+		with open(os.path.expanduser('~') + '/configure_hdl_new.txt') as configure_file:
+			lines = configure_file.readlines()
+			server_base_path = lines[0].rstrip()
+			environment_path_files = lines[1].rstrip()
+	except OSError:
+		print("Configuration file needed")
+
+	pattern = '\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}'
+	blacklist = []
+	timestamp_match = re.search(pattern, hdl_branch)
+	if timestamp_match:
+		hdl_branch = re.split('\/', hdl_branch)[0]
+		timestamp_folder = timestamp_match.group()
+
+	if hdl_branch == "main":
+		hdl_branch_path = hdl_branch + '/hdl_output'
+	else:
+		if requests.get(server_base_path + 'releases/' + hdl_branch, stream=True).status_code == 200:
+			hdl_branch_path = 'releases/' + hdl_branch + '/hdl_output'
+		elif requests.get(server_base_path + 'dev/' + hdl_branch, stream=True).status_code == 200:
+			hdl_branch_path = 'dev/' + hdl_branch + '/hdl_output'
+		else:
+			print("Error related to hdl branch name: " + hdl_branch)
+			exit()
+
+	if timestamp_match:
+		if requests.get(server_base_path + hdl_branch_path + '/' + timestamp_folder, stream=True).status_code == 200:
+			hdl_branch_path += '/' + timestamp_folder
+		else:
+			print("Error related to timestamp folder: " + timestamp_folder + " not existing in hdl_branch: " + hdl_branch)
+			exit()
+
+	builds_dir = _builds_dir + '_' + hdl_branch
+	run_cmd(create_dir_cmd.format(builds_dir))
 	if SKIP_DOWNLOAD == 1:
-		return 0
-	release_link = os.path.join('https://github.com/amiclaus/hdl/releases/download/latest', FILE_TO_DOWNLOAD)
-	new_harware = os.path.join(builds_dir, FILE_TO_DOWNLOAD)
-	new_harware_dir = os.path.join(builds_dir, NEW_HW_DIR_NAME)
-	err = run_cmd('wget %s -O %s' % (release_link, new_harware))
-	if err != 0:
-		return err
-
-	err = run_cmd('unzip -o %s -d %s' % (new_harware, new_harware_dir))
-	if err != 0:
-		return err
-	return 0
+		return (environment_path_files, builds_dir)
+	hardwares = os.path.join(builds_dir, HW_DIR_NAME)
+	run_cmd(create_dir_cmd.format(hardwares))
+	server_full_path = server_base_path + hdl_branch_path
+	if (_platform is None or _platform == 'xilinx'):
+		blacklist = process_blacklist()
+		new_hardwares = os.path.join(builds_dir, NEW_HW_DIR_NAME)
+		run_cmd(create_dir_cmd.format(new_hardwares))
+		err = os.system("python {}/tools/scripts/download_files.py {} {} {} \"{}\""
+				  .format(noos, noos, builds_dir, server_full_path, blacklist))
+		if err != 0:
+			return
+	return (environment_path_files, builds_dir, blacklist)
 
 def get_hardware(hardware, platform, builds_dir):
 	if platform == 'xilinx':
@@ -159,7 +223,6 @@ def get_hardware(hardware, platform, builds_dir):
 		ext = 'sopcinfo'
 		base_name = 'system_bd'
 
-	new_hdf = 0
 	new_name = "%s.%s" % (base_name, ext)
 	tmp_filename = os.path.join(builds_dir, NEW_HW_DIR_NAME, hardware, new_name)
 	old_name = "%s.%s" % (hardware, ext)
@@ -183,10 +246,7 @@ class BuildConfig:
 	def __init__(self, project_dir, platform, flags, build_name, hardware,
 	             _builds_dir, log_dir):
 		self.project_dir = project_dir
-		if _builds_dir is None:
-			self.builds_dir = project_dir
-		else:
-			self.builds_dir = _builds_dir
+		self.builds_dir = _builds_dir
 		self.log_dir = log_dir
 		self.project = os.path.basename(project_dir)
 		self.platform = platform
@@ -195,19 +255,31 @@ class BuildConfig:
 		self.hardware = hardware
 		short_build_dir = 'build_%s' % platform
 		self._binary = "%s_%s_%s.elf" % (self.project, platform, build_name)
+		self.boot_dir = "%s_%s_%s" % (self.project, platform, build_name)
 		if hardware != '':
 			short_build_dir = short_build_dir + '_' + hardware
 			self._binary = "%s_%s_%s_%s.elf" % (
 				self.project, platform, build_name, hardware)
-		self.build_dir = os.path.join(self.builds_dir, short_build_dir)
+			self.boot_dir = "%s_%s_%s_%s" % (
+				self.project, platform, build_name, hardware)
+		if (platform == 'stm32'):
+			self.build_dir = os.path.join(self.project_dir, 'build')
+		else:
+			self.build_dir = os.path.join(self.builds_dir, short_build_dir)
 		self.binary = os.path.join(self.build_dir, self._binary)
 		self.export_file = os.path.join(self.build_dir, self.binary)
 		if (platform == 'aducm3029' or platform == 'stm32' or platform == 'maxim'):
+			self.export_elf_file = self.export_file
 			self.export_file = self.export_file.replace('.elf', '.hex')
 		if (platform == 'pico'):
+			self.export_elf_file = self.export_file
 			self.export_file = self.export_file.replace('.elf', '.uf2')
 		if (platform == 'mbed'):
+			self.export_elf_file = self.export_file
 			self.export_file = self.export_file.replace('.elf', '.bin')
+		if (platform == 'xilinx'):
+			self.export_boot_bin = os.path.join(self.build_dir, "output_boot_bin/BOOT.BIN")
+			self.export_archive = os.path.join(self.build_dir, "bootgen_sysfiles.tar.gz")
 
 	def build(self):
 		global log_file
@@ -243,8 +315,10 @@ class BuildConfig:
 			err = run_cmd(cmd + ' reset')
 			if err != 0:
 				return err
-			err = run_cmd_stm("timeout 200s " + cmd + ' VERBOSE=y -j%d all' % (multiprocessing.cpu_count() - 1))
-			if err != 0 and err != 31744:
+			err = run_cmd("timeout 200s " + cmd + ' VERBOSE=y -j%d all' % (multiprocessing.cpu_count() / 2))
+			if err != 0:
+				if err == 124:
+					log("Build not finished, stopped by timeout")
 				return err
 		else:
 			if new_hdf:
@@ -258,7 +332,7 @@ class BuildConfig:
 			err = run_cmd(cmd + ' clean')
 			if err != 0:
 				return err
-			err = run_cmd(cmd + ' -j%d all' % (multiprocessing.cpu_count() - 1))
+			err = run_cmd(cmd + ' -j%d all' % (multiprocessing.cpu_count() / 2))
 			if err != 0:
 				return err
 		
@@ -267,21 +341,12 @@ class BuildConfig:
 
 		return 0
 def main():
-	create_dir_cmd = "test -d {0} || mkdir -p {0}"
 	(noos, export_dir, log_dir, _project,
-	 _platform, _build_name, _builds_dir, _hw) = parse_input()
+	 _platform, _build_name, _builds_dir, _hw, hdl_branch) = parse_input()
 	projets = os.path.join(noos,'projects')
 	run_cmd(create_dir_cmd.format(export_dir))
 	run_cmd(create_dir_cmd.format(log_dir))
-	if _builds_dir is not None:
-		run_cmd(create_dir_cmd.format(_builds_dir))
-		hardwares = os.path.join(_builds_dir, HW_DIR_NAME)
-		run_cmd(create_dir_cmd.format(hardwares))
-
-	err = download_all_hw(_builds_dir)
-	if err != 0:
-		return
-
+	(environment_path_files, builds_dir, blacklist) = configfile_and_download_all_hw(_platform, noos, _builds_dir, hdl_branch)
 	for project in os.listdir(projets):
 		binary_created = False
 		if _project is not None:
@@ -292,8 +357,6 @@ def main():
 		if not os.path.isfile(build_file):
 			continue
 
-		project_export = os.path.join(export_dir, project)
-		run_cmd(create_dir_cmd.format(project_export))
 		fp = open(build_file)
 		configs = json.loads(fp.read())
 		ok = 1
@@ -305,6 +368,8 @@ def main():
 				if _build_name is not None:
 					if _build_name != build_name:
 						continue
+				project_export = os.path.join(export_dir, project)
+				run_cmd(create_dir_cmd.format(project_export))
 				flags = params['flags']
 				if 'hardware' in params:
 					hardwares = params['hardware']
@@ -315,15 +380,17 @@ def main():
 					if _hw is not None:
 						if _hw != hardware:
 							continue
+					if hardware in blacklist:
+						continue
 					env = dict(os.environ)
-					shell_source("~/." + platform + "_environment.sh")
+					shell_source(environment_path_files + platform + "_environment.sh")
 
 					new_build = BuildConfig(project_dir,
 								platform,
 								flags,
 								build_name,
 								hardware,
-								_builds_dir, 
+								builds_dir,
 								log_dir)
 					err = new_build.build()
 					os.environ.clear()
@@ -335,18 +402,21 @@ def main():
 							exit()
 						continue
 					else:
-						if platform == 'stm32':
-							err = run_cmd_stm("cp %s %s" %
-							(new_build.export_file, project_export))
-							if err:
-								binary_created = False
-							else:
-								binary_created = True
-
-
+						if platform == 'xilinx':
+							project_export_dir = os.path.join(project_export, new_build.boot_dir)
+							run_cmd(create_dir_cmd.format(project_export_dir))
+							run_cmd("cp %s %s" %
+								(new_build.export_archive, project_export_dir))
+							file = open(os.path.join(new_build.build_dir,"tmp/arch.txt"))
+							if 'sys_mb' not in file.read(): #for sys_mb no BOOT.BIN is created
+								run_cmd("cp %s %s" %
+									(new_build.export_boot_bin, project_export_dir))
+							binary_created = True
 						else:
 							run_cmd("cp %s %s" %
 								(new_build.export_file, project_export))
+							run_cmd("cp %s %s" %
+								(new_build.export_elf_file, project_export))
 							binary_created = True
 			
 		fp.close()
@@ -358,8 +428,11 @@ def main():
 		all_status = os.path.join(log_dir, 'all_builds.txt')
 		os.system('echo Project %20s -- %s >> %s' % (project, status, all_status))
 		if binary_created:
-			run_cmd("zip -jm %s.zip %s" % (project_export, os.path.join(project_export, "*")))
-
+			cwd = os.getcwd()
+			os.chdir(project_export)
+			os.system("zip -mr -FS %s.zip . >> %s 2>&1" % ("../"+project, "../../"+log_file))
+			os.chdir(cwd)
+			run_cmd("rm -r %s" % project_export)
 main()
 
 if ERR != 0:

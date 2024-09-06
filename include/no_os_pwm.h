@@ -46,6 +46,12 @@
 #include <stdbool.h>
 
 /******************************************************************************/
+/********************** Macros and Constants Definitions **********************/
+/******************************************************************************/
+
+#define PWM_MAX_NUMBER 4
+
+/******************************************************************************/
 /*************************** Types Declarations *******************************/
 /******************************************************************************/
 /**
@@ -76,6 +82,10 @@ struct no_os_pwm_init_param {
 	enum no_os_pwm_polarity polarity;
 	/** PWM gpio pin init param*/
 	struct no_os_gpio_init_param *pwm_gpio;
+	/* IRQ ID */
+	uint32_t irq_id;
+	/** PWM callback **/
+	void (*pwm_callback)(void *arg);
 	/** PWM platform specific functions */
 	const struct no_os_pwm_platform_ops *platform_ops;
 	/** PWM extra parameters (device specific) */
@@ -87,6 +97,8 @@ struct no_os_pwm_init_param {
  * @brief  Structure representing an PWM generator device
  */
 struct no_os_pwm_desc {
+	/** PWM mutex*/
+	void *mutex;
 	/** Pwm id */
 	uint32_t id;
 	/** PWM generator period */
@@ -101,6 +113,10 @@ struct no_os_pwm_desc {
 	bool enabled;
 	/** PWM gpio pin instance */
 	struct no_os_gpio_desc *pwm_gpio;
+	/* IRQ ID */
+	uint32_t irq_id;
+	/** PWM callback **/
+	void (*pwm_callback)(void* arg);
 	/** PWM platform specific functions */
 	const struct no_os_pwm_platform_ops *platform_ops;
 	/** PWM extra parameters (device specific) */

@@ -18,8 +18,9 @@ SRCS +=	$(PLATFORM_DRIVERS)/xilinx_axi_io.c \
 	$(PLATFORM_DRIVERS)/xilinx_gpio.c \
 	$(PLATFORM_DRIVERS)/xilinx_delay.c \
 	$(NO-OS)/util/no_os_util.c \
-	$(NO-OS)/util/no_os_alloc.c
-ifeq (y,$(strip $(TINYIIOD)))
+	$(NO-OS)/util/no_os_alloc.c \
+	$(NO-OS)/util/no_os_mutex.c
+ifeq (y,$(strip $(IIOD)))
 LIBRARIES += iio
 SRCS += $(NO-OS)/util/no_os_fifo.c \
 	$(NO-OS)/util/no_os_list.c \
@@ -32,7 +33,7 @@ SRCS += $(NO-OS)/util/no_os_fifo.c \
 endif
 INCS +=	$(PROJECT)/src/app/app_config.h \
 	$(PROJECT)/src/app/parameters.h
-ifeq (y,$(strip $(TINYIIOD)))
+ifeq (y,$(strip $(IIOD)))
 INCS +=	$(DRIVERS)/frequency/adf4377/iio_adf4377.h
 endif
 INCS += $(DRIVERS)/frequency/adf4377/adf4377.h
@@ -45,8 +46,9 @@ INCS +=	$(INCLUDE)/no_os_axi_io.h \
 	$(INCLUDE)/no_os_delay.h \
 	$(INCLUDE)/no_os_util.h \
 	$(INCLUDE)/no_os_print_log.h \
-	$(INCLUDE)/no_os_alloc.h
-ifeq (y,$(strip $(TINYIIOD)))
+	$(INCLUDE)/no_os_alloc.h \
+	$(INCLUDE)/no_os_mutex.h
+ifeq (y,$(strip $(IIOD)))
 INCS += $(INCLUDE)/no_os_fifo.h \
 	$(INCLUDE)/no_os_irq.h \
 	$(INCLUDE)/no_os_uart.h \

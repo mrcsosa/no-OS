@@ -1,8 +1,6 @@
 /***************************************************************************//**
  *   @file   iio.c
  *   @brief  Implementation of iio.
- *   This module implements read/write ops, required by libtinyiiod and further
- *   calls show/store functions, corresponding to device/channel/attribute.
  *   @author Cristian Pop (cristian.pop@analog.com)
  *   @author Mihail Chindris (mihail.chindris@analog.com)
 ********************************************************************************
@@ -64,6 +62,12 @@
 #include "tcp_socket.h"
 #endif
 
+#ifdef NO_OS_LWIP_NETWORKING
+#include "no_os_delay.h"
+#include "tcp_socket.h"
+#include "lwip_socket.h"
+#endif
+
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
@@ -103,8 +107,9 @@ static char header[] =
 	"<!ATTLIST debug-attribute name CDATA #REQUIRED>"
 	"<!ATTLIST buffer-attribute name CDATA #REQUIRED>"
 	"]>"
-	"<context name=\"xml\" description=\"no-OS "
-	NO_OS_TOSTRING(NO_OS_VERSION) "\" >";
+	"<context name=\"xml\" description=\"no-OS/projects/"
+	NO_OS_TOSTRING(NO_OS_PROJECT)" "
+	NO_OS_TOSTRING(NO_OS_VERSION)"\" >";
 static char header_end[] = "</context>";
 
 static const char * const iio_chan_type_string[] = {
@@ -122,6 +127,9 @@ static const char * const iio_chan_type_string[] = {
 	[IIO_ANGL] = "angl",
 	[IIO_ROT] = "rot",
 	[IIO_COUNT] = "count",
+	[IIO_DELTA_ANGL] = "deltaangl",
+	[IIO_DELTA_VELOCITY] = "deltavelocity",
+	[IIO_WEIGHT] = "weight",
 };
 
 static const char * const iio_modifier_names[] = {
@@ -216,7 +224,7 @@ struct iio_desc {
 	int (*send)(void *conn, uint8_t *buf, uint32_t len);
 	/* FIFO for socket descriptors */
 	struct no_os_circular_buffer	*conns;
-#ifdef NO_OS_NETWORKING
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
 	struct tcp_socket_desc	*current_sock;
 	/* Instance of server socket */
 	struct tcp_socket_desc	*server;
@@ -659,7 +667,7 @@ int32_t iio_parse_value(char *buf, enum iio_val fmt, int32_t *val,
 int iio_format_value(char *buf, uint32_t len, enum iio_val fmt,
 		     int32_t size, int32_t *vals)
 {
-	uint64_t tmp;
+	int64_t tmp;
 	int32_t integer, fractional;
 	bool dB = false;
 	int32_t i = 0;
@@ -681,11 +689,19 @@ int iio_format_value(char *buf, uint32_t len, enum iio_val fmt,
 		tmp = no_os_div_s64((int64_t)vals[0] * 1000000000LL, vals[1]);
 		fractional = vals[1];
 		integer = (int32_t)no_os_div_s64_rem(tmp, 1000000000, &fractional);
+
+		if (integer == 0 && fractional < 0)
+			return snprintf(buf, len, "-0.%09u", abs(fractional));
+
 		return snprintf(buf, len, "%"PRIi32".%09u", integer,
 				abs(fractional));
 	case IIO_VAL_FRACTIONAL_LOG2:
 		tmp = no_os_shift_right((int64_t)vals[0] * 1000000000LL, vals[1]);
 		integer = (int32_t)no_os_div_s64_rem(tmp, 1000000000LL, &fractional);
+
+		if (integer == 0 && fractional < 0)
+			return snprintf(buf, len, "-0.%09u", abs(fractional));
+
 		return snprintf(buf, len, "%"PRIi32".%09u", integer,
 				abs(fractional));
 	case IIO_VAL_INT_MULTIPLE: {
@@ -1082,16 +1098,29 @@ int iio_process_trigger_type(struct iio_desc *desc, char *trigger_name)
 
 static uint32_t bytes_per_scan(struct iio_channel *channels, uint32_t mask)
 {
-	uint32_t cnt, i;
+	uint32_t cnt, i, length, largest = 1;
 
 	cnt = 0;
 	i = 0;
 	while (mask) {
-		if ((mask & 1))
-			cnt += channels[i].scan_type->storagebits / 8;
+		if ((mask & 1)) {
+			length = channels[i].scan_type->storagebits / 8;
+
+			if (length > largest)
+				largest = length;
+
+			if (cnt % length)
+				cnt += 2 * length - (cnt % length);
+			else
+				cnt += length;
+		}
+
 		mask >>= 1;
 		++i;
 	}
+
+	if (cnt % largest)
+		cnt += largest - (cnt % largest);
 
 	return cnt;
 }
@@ -1167,9 +1196,11 @@ static int iio_open_dev(struct iiod_ctx *ctx, const char *device,
 
 	if (dev->dev_descriptor->pre_enable) {
 		ret = dev->dev_descriptor->pre_enable(dev->dev_instance, mask);
-		if (NO_OS_IS_ERR_VALUE(ret) && dev->buffer.allocated) {
-			no_os_free(dev->buffer.cb.buff);
-			dev->buffer.allocated = 0;
+		if (NO_OS_IS_ERR_VALUE(ret)) {
+			if (dev->buffer.allocated) {
+				no_os_free(dev->buffer.cb.buff);
+				dev->buffer.allocated = 0;
+			}
 			return ret;
 		}
 	}
@@ -1210,19 +1241,19 @@ static int iio_close_dev(struct iiod_ctx *ctx, const char *device)
 		dev->buffer.allocated = 0;
 	}
 
-	dev->buffer.public.active_mask = 0;
-	if (dev->dev_descriptor->post_disable) {
-		ret = dev->dev_descriptor->post_disable(dev->dev_instance);
-		if (ret)
-			return ret;
-	}
-
 	desc = ctx->instance;
 	if(dev->trig_idx != NO_TRIGGER) {
 		trig = &desc->trigs[dev->trig_idx];
-		if (trig->descriptor->disable)
+		if (trig->descriptor->disable) {
 			ret = trig->descriptor->disable(trig->instance);
+			if (ret)
+				return ret;
+		}
 	}
+
+	dev->buffer.public.active_mask = 0;
+	if (dev->dev_descriptor->post_disable)
+		ret = dev->dev_descriptor->post_disable(dev->dev_instance);
 
 	return ret;
 }
@@ -1280,8 +1311,6 @@ static int iio_refill_buffer(struct iiod_ctx *ctx, const char *device)
 /**
  * @brief Read chunk of data from RAM to pbuf. Call
  * "iio_transfer_dev_to_mem()" first.
- * This function is probably called multiple times by libtinyiiod after a
- * "iio_transfer_dev_to_mem" call, since we can only read "bytes_count" bytes.
  * @param device - String containing device name.
  * @param pbuf - Buffer where value is stored.
  * @param offset - Offset to the remaining data after reading n chunks.
@@ -1325,9 +1354,6 @@ static int iio_read_buffer(struct iiod_ctx *ctx, const char *device, char *buf,
 
 /**
  * @brief Write chunk of data into RAM.
- * This function is probably called multiple times by libtinyiiod before a
- * "iio_transfer_mem_to_dev" call, since we can only write "bytes_count" bytes
- * at a time.
  * @param device - String containing device name.
  * @param buf - Values to write.
  * @param offset - Offset in memory after the nth chunk of data.
@@ -1398,29 +1424,28 @@ int iio_buffer_pop_scan(struct iio_buffer *buffer, void *data)
 	if (!buffer)
 		return -EINVAL;
 
-	if(!buffer->cyclic_info.is_cyclic)
-		return no_os_cb_read(buffer->buf, data, buffer->bytes_per_scan);
+	int ret;
 
-	memcpy(data,
-	       &buffer->buf->buff[buffer->cyclic_info.buff_index],
-	       buffer->bytes_per_scan);
+	ret = no_os_cb_read(buffer->buf, data, buffer->bytes_per_scan);
 
-	buffer->cyclic_info.buff_index += buffer->bytes_per_scan;
-	if (buffer->size == buffer->cyclic_info.buff_index)
-		buffer->cyclic_info.buff_index = 0;
+	if (buffer->cyclic_info.is_cyclic) {
+		if (buffer->buf->read.idx == buffer->buf->write.idx)
+			buffer->buf->read.idx = 0;
+	}
 
-	return 0;
+	return ret;
 }
 
-#ifdef NO_OS_NETWORKING
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
 
 static int32_t accept_network_clients(struct iio_desc *desc)
 {
 	struct tcp_socket_desc *sock;
 	struct iiod_conn_data data;
 	int32_t ret;
+	uint32_t id;
+
 	do {
-		uint32_t id;
 		ret = socket_accept(desc->server, &sock);
 		if (NO_OS_IS_ERR_VALUE(ret))
 			return ret;
@@ -1429,16 +1454,30 @@ static int32_t accept_network_clients(struct iio_desc *desc)
 		data.buf = no_os_calloc(1, IIOD_CONN_BUFFER_SIZE);
 		data.len = IIOD_CONN_BUFFER_SIZE;
 
+		if (!data.buf) {
+			ret = -ENOMEM;
+			goto close_socket;
+		}
+
 		ret = iiod_conn_add(desc->iiod, &data, &id);
 		if (NO_OS_IS_ERR_VALUE(ret))
-			return ret;
+			goto free_buf;
 
 		ret = _push_conn(desc, id);
 		if (NO_OS_IS_ERR_VALUE(ret))
-			return ret;
+			goto remove_conn;
 	} while (true);
 
 	return 0;
+
+remove_conn:
+	iiod_conn_remove(desc->iiod, id, &data);
+free_buf:
+	no_os_free(data.buf);
+close_socket:
+	socket_remove(sock);
+
+	return ret;
 }
 #endif
 
@@ -1455,11 +1494,14 @@ int iio_step(struct iio_desc *desc)
 
 	iio_process_async_triggers(desc);
 
-#ifdef NO_OS_NETWORKING
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
 	if (desc->server) {
 		ret = accept_network_clients(desc);
 		if (NO_OS_IS_ERR_VALUE(ret) && ret != -EAGAIN)
 			return ret;
+#if defined(NO_OS_LWIP_NETWORKING)
+		no_os_lwip_step(desc->server->net->net, desc->server->net->net);
+#endif
 	}
 #endif
 
@@ -1469,12 +1511,10 @@ int iio_step(struct iio_desc *desc)
 
 	ret = iiod_conn_step(desc->iiod, conn_id);
 	if (ret == -ENOTCONN) {
-#ifdef NO_OS_NETWORKING
-		if (desc->server) {
-			iiod_conn_remove(desc->iiod, conn_id, &data);
-			socket_remove(data.conn);
-			no_os_free(data.buf);
-		}
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
+		iiod_conn_remove(desc->iiod, conn_id, &data);
+		socket_remove(data.conn);
+		no_os_free(data.buf);
 #endif
 	} else {
 		_push_conn(desc, conn_id);
@@ -1821,8 +1861,7 @@ static int32_t iio_init_trigs(struct iio_desc *desc,
 }
 
 /**
- * @brief Set communication ops and read/write ops that will be called
- * from "libtinyiiod".
+ * @brief Set communication ops and read/write ops
  * @param desc - iio descriptor.
  * @param init_param - appropriate init param.
  * @return 0 in case of success or negative value otherwise.
@@ -1877,6 +1916,7 @@ int iio_init(struct iio_desc **desc, struct iio_init_param *init_param)
 	iiod_param.ops = ops;
 	iiod_param.xml = ldesc->xml_desc;
 	iiod_param.xml_len = ldesc->xml_size;
+	iiod_param.phy_type = init_param->phy_type;
 
 	ret = iiod_init(&ldesc->iiod, &iiod_param);
 	if (NO_OS_IS_ERR_VALUE(ret))
@@ -1902,7 +1942,7 @@ int iio_init(struct iio_desc **desc, struct iio_init_param *init_param)
 			goto free_conns;
 		_push_conn(ldesc, conn_id);
 	}
-#ifdef NO_OS_NETWORKING
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
 	else if (init_param->phy_type == USE_NETWORK) {
 		ldesc->send = (int (*)())socket_send;
 		ldesc->recv = (int (*)())socket_recv;
@@ -1941,7 +1981,7 @@ int iio_init(struct iio_desc **desc, struct iio_init_param *init_param)
 	return 0;
 
 free_pylink:
-#ifdef NO_OS_NETWORKING
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
 	socket_remove(ldesc->server);
 #endif
 free_conns:
@@ -1967,16 +2007,27 @@ free_desc:
  */
 int iio_remove(struct iio_desc *desc)
 {
+	struct iiod_conn_data data;
+	int ret;
+
 	if (!desc)
 		return -EINVAL;
 
-#ifdef NO_OS_NETWORKING
+#if defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING)
+	for (int i = 0; i < IIOD_MAX_CONNECTIONS; i++) {
+		ret = iiod_conn_remove(desc->iiod, i, &data);
+		if (!ret) {
+			no_os_free(data.buf);
+			socket_remove(data.conn);
+		}
+	}
 	socket_remove(desc->server);
 #endif
 	no_os_cb_remove(desc->conns);
 	iiod_remove(desc->iiod);
 	no_os_free(desc->devs);
 	no_os_free(desc->trigs);
+	no_os_free(desc->xml_desc);
 	no_os_free(desc);
 
 	return 0;

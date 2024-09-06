@@ -81,7 +81,9 @@ static int hmc630x_iio_read_attr(void *device, char *buf,
 	bool enable;
 	uint64_t vco;
 	uint8_t attn;
-	enum hmc6301_lna_gain lna_gain;
+	uint8_t band;
+	uint8_t lock;
+	enum hmc6301_lna_attn lna_attn;
 	enum hmc6301_bb_attn attn1, attn2;
 	enum hmc6301_bb_attn_fine attni, attnq;
 	enum hmc6301_bb_lpc lpc;
@@ -101,6 +103,20 @@ static int hmc630x_iio_read_attr(void *device, char *buf,
 			return ret;
 
 		val = vco / 1000;
+		break;
+	case HMC630X_IIO_ATTR_VCO_BAND:
+		ret = hmc630x_read(d, HMC630X_VCO_BANDSEL, &band);
+		if (ret)
+			return ret;
+
+		val = band;
+		break;
+	case HMC630X_IIO_ATTR_VCO_LOCK:
+		ret = hmc630x_read(d, HMC630X_LOCKDET, &lock);
+		if (ret)
+			return ret;
+
+		val = lock;
 		break;
 	case HMC630X_IIO_ATTR_IF_ATTN:
 		ret = hmc630x_get_if_attn(d, &attn);
@@ -124,11 +140,11 @@ static int hmc630x_iio_read_attr(void *device, char *buf,
 		val = attn;
 		break;
 	case HMC6301_IIO_ATTR_RF_LNA_GAIN:
-		ret = hmc6301_get_lna_gain(d, &lna_gain);
+		ret = hmc6301_get_lna_gain(d, &lna_attn);
 		if (ret)
 			return ret;
 
-		val = lna_gain;
+		val = lna_attn;
 		break;
 	case HMC6301_IIO_ATTR_BB_ATTN1:
 	case HMC6301_IIO_ATTR_BB_ATTN2:
@@ -204,7 +220,7 @@ static int hmc630x_iio_write_attr(void *device, char *buf,
 		ret = hmc6300_set_rf_attn(d, (uint8_t)val);
 		break;
 	case HMC6301_IIO_ATTR_RF_LNA_GAIN:
-		ret = hmc6301_set_lna_gain(d, (enum hmc6301_lna_gain)val);
+		ret = hmc6301_set_lna_gain(d, (enum hmc6301_lna_attn)val);
 		break;
 	case HMC6301_IIO_ATTR_BB_ATTN1:
 	case HMC6301_IIO_ATTR_BB_ATTN2:
@@ -234,7 +250,7 @@ static int hmc630x_iio_write_attr(void *device, char *buf,
 		if (ret)
 			break;
 
-		if (priv == HMC6301_IIO_ATTR_BB_ATTN1)
+		if (priv == HMC6301_IIO_ATTR_BB_LPC)
 			ret = hmc6301_set_bb_lpc_hpc(d, (enum hmc6301_bb_lpc)val, hpc);
 		else
 			ret = hmc6301_set_bb_lpc_hpc(d, lpc, (enum hmc6301_bb_hpc)val);
@@ -243,7 +259,10 @@ static int hmc630x_iio_write_attr(void *device, char *buf,
 		return -EINVAL;
 	};
 
-	return ret;
+	if (ret)
+		return ret;
+
+	return len;
 }
 
 static int hmc630x_iio_read_vco_available(void *device, char *buf,
@@ -327,6 +346,16 @@ static struct iio_channel hmc630x_channels[] = {
 		.name = "vco_available", \
 		.priv = HMC630X_IIO_ATTR_VCO_AVAILABLE, \
 		.show = hmc630x_iio_read_vco_available, \
+	}, \
+	{ \
+		.name = "vco_band", \
+		.priv = HMC630X_IIO_ATTR_VCO_BAND, \
+		.show = hmc630x_iio_read_attr, \
+	}, \
+	{ \
+		.name = "vco_lock", \
+		.priv = HMC630X_IIO_ATTR_VCO_LOCK, \
+		.show = hmc630x_iio_read_attr, \
 	}, \
 	{ \
 		.name = "if_attn", \

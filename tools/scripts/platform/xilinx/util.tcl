@@ -7,7 +7,7 @@ proc _file_is_xsa {} {
 }
 
 proc _get_processor {} {
-	set proc_list [hsi::get_cells * -filter {IP_TYPE==PROCESSOR}]
+	set proc_list [hsi::get_cells * -hier -filter {IP_TYPE==PROCESSOR}]
 
 	if {[llength $proc_list] == 0} {
 		return 0
@@ -201,15 +201,12 @@ proc _init_ps {cpu} {
 		}
 
 		"psu_cortexa53_0" {
-			# Configure PSU
-			targets -set -nocase -filter {name =~ "PSU" && jtag_cable_name =~ "*$::jtagtarget*"}
-			psu_init
-			psu_post_config
-			psu_ps_pl_reset_config
-			psu_ps_pl_isolation_removal
-			# write bootloop and release A53-0 reset
-			mwr 0xffff0000 0x14000000
-			mwr 0xFD1A0104 0x380E
+			targets -set -nocase -filter {name =~ "*A53*#0" && jtag_cable_name =~ "*$::jtagtarget*"}
+			rst -processor
+			dow $::fsbl_file
+			set bp_16_41_fsbl_bp [bpadd -addr &XFsbl_Exit]
+			con -block -timeout 60
+			bpremove $bp_16_41_fsbl_bp
 			targets -set -filter {name =~ "Cortex-A53 #0" && jtag_cable_name =~ "*$::jtagtarget*"}
 		}
 		"psu_cortexr5_0" {
@@ -245,7 +242,11 @@ proc upload {} {
 	set cpu [_get_processor]
 
 	# Connect to the fpga
-	connect
+  if { [info exists ::env(XSCT_REMOTE_HOST)] && [info exists ::env(XSCT_REMOTE_PORT)] } {
+    connect -host "$::env(XSCT_REMOTE_HOST)" -port "$::env(XSCT_REMOTE_PORT)"
+  } else {
+    connect
+  }
 
 	# Reset and stop the ARM CPU before we re-program the FPGA if we are on a ZYNQ.
 	# Otherwise undefined behavior can occur.
@@ -265,7 +266,8 @@ set hw		$::hw_path/[lindex $argv 3]
 set binary      [lindex $argv 4]
 set target	[lindex $argv 5]
 set template	[lindex $argv 6]
-set jtagtarget	[lindex $argv 7]
+set fsbl_file   [lindex $argv 7]
+set jtagtarget	[lindex $argv 8]
 
 if {$target == 0} {set $target ""}
 

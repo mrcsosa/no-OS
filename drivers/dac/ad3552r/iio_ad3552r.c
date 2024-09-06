@@ -80,7 +80,7 @@ enum ad3552r_iio_attrs {
 };
 
 struct iio_ad3552r_desc {
-	struct iio_channel channels[AD3552R_NUM_CH];
+	struct iio_channel channels[AD3552R_MAX_NUM_CH];
 	struct iio_device iio_desc;
 	struct ad3552r_desc *dac;
 	uint32_t mask;
@@ -90,8 +90,8 @@ struct iio_ad3552r_desc {
 /************************* Functions Definitions *****************************/
 /*****************************************************************************/
 
-static ssize_t iio_ad3552r_attr_get(void *device, char *buf, size_t len,
-				    const struct iio_ch_info *channel, intptr_t priv)
+static int iio_ad3552r_attr_get(void *device, char *buf, size_t len,
+				const struct iio_ch_info *channel, intptr_t priv)
 {
 	struct iio_ad3552r_desc *iio_dac = device;
 	int32_t vals[2], err;
@@ -140,8 +140,8 @@ static ssize_t iio_ad3552r_attr_get(void *device, char *buf, size_t len,
 	}
 }
 
-static ssize_t iio_ad3552r_attr_set(void *device, char *buf, size_t len,
-				    const struct iio_ch_info *channel, intptr_t priv)
+static int iio_ad3552r_attr_set(void *device, char *buf, size_t len,
+				const struct iio_ch_info *channel, intptr_t priv)
 {
 	struct iio_ad3552r_desc *iio_dac = device;
 	uint32_t val;
@@ -252,7 +252,7 @@ int32_t iio_ad3552r_init(struct iio_ad3552r_desc **iio_dac,
 	}
 
 	j = 0;
-	for (i = 0; i < AD3552R_NUM_CH; ++i)
+	for (i = 0; i < AD3552R_MAX_NUM_CH; ++i)
 		if (param->channels[i].en)
 			liio_dac->channels[j++] = AD3552R_DAC_CH(i);
 

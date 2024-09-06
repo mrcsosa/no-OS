@@ -42,7 +42,19 @@
 /******************************************************************************/
 
 #include "adis.h"
+#include "adis_internals.h"
 #include "adis1657x.h"
+#include "no_os_units.h"
+#include <string.h>
+
+/******************************************************************************/
+/********************** Macros and Constants Definitions **********************/
+/******************************************************************************/
+
+#define ADIS1657X_MSG_SIZE_16_BIT_BURST_FIFO	20 /* in bytes */
+#define ADIS1657X_MSG_SIZE_32_BIT_BURST_FIFO	34 /* in bytes */
+#define ADIS1657X_READ_BURST_DATA_NO_POP	0x00
+#define ADIS1657X_CHECKSUM_BUF_IDX_FIFO		2
 
 /******************************************************************************/
 /************************** Variable Definitions ******************************/
@@ -158,7 +170,221 @@ static const struct adis_clk_freq_limit adis1657x_sampling_clk_limits = {
 	.max_freq = 4100,
 };
 
-struct adis_chip_info adis1657x_chip_info = {
+/* Values from datasheet for 32-bit data */
+static const struct adis_scale_members adis1657x_anglvel_scale[] = {
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_2)] = {1, RAD_TO_DEGREE(40 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_3)] = {1, RAD_TO_DEGREE(10 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_2)] = {1, RAD_TO_DEGREE(40 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_3)] = {1, RAD_TO_DEGREE(10 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_2)] = {1, RAD_TO_DEGREE(40 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_3)] = {1, RAD_TO_DEGREE(10 << 16)},
+};
+
+static const struct adis_scale_members adis1657x_accl_scale[] = {
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_2)] = {1, M_S_2_TO_G(4000 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_3)] = {1, M_S_2_TO_G(4000 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_2)] = {1, M_S_2_TO_G(800 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_3)] = {1, M_S_2_TO_G(800 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_2)] = {1, M_S_2_TO_G(800 << 16)},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_3)] = {1, M_S_2_TO_G(800 << 16)},
+};
+
+static const struct adis_scale_members adis1657x_deltaangl_scale[] = {
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_2)] = {DEGREE_TO_RAD(450), 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_3)] = {DEGREE_TO_RAD(2000), 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_2)] = {DEGREE_TO_RAD(450), 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_3)] = {DEGREE_TO_RAD(2000), 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_2)] = {DEGREE_TO_RAD(450), 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_3)] = {DEGREE_TO_RAD(2000), 31},
+};
+
+static const struct adis_scale_members adis1657x_deltavelocity_scale[]
+	= {
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_2)] = {100, 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_3)] = {100, 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_2)] = {125, 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_3)] = {125, 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_2)] = {400, 31},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_3)] = {400, 31},
+};
+
+/* Milli-degrees Celsius for temperature */
+static const struct adis_scale_members adis1657x_temp_scale[] = {
+
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_2)] = {1 * MILLIDEGREE_PER_DEGREE, 10},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16575_3)] = {1 * MILLIDEGREE_PER_DEGREE, 10},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_2)] = {1 * MILLIDEGREE_PER_DEGREE, 10},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16576_3)] = {1 * MILLIDEGREE_PER_DEGREE, 10},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_2)] = {1 * MILLIDEGREE_PER_DEGREE, 10},
+	[ADIS1657X_ID_NO_OFFSET(ADIS16577_3)] = {1 * MILLIDEGREE_PER_DEGREE, 10},
+};
+
+
+static int adis1657x_get_scale(struct adis_dev *adis,
+			       uint32_t *scale_m1, uint32_t *scale_m2,
+			       enum adis_chan_type chan_type)
+{
+	switch(chan_type) {
+	case ADIS_ACCL_CHAN:
+		*scale_m1 = adis1657x_accl_scale[ADIS1657X_ID_NO_OFFSET(adis->dev_id)].scale_m1;
+		*scale_m2 = adis1657x_accl_scale[ADIS1657X_ID_NO_OFFSET(adis->dev_id)].scale_m2;
+		return 0;
+	case ADIS_GYRO_CHAN:
+		*scale_m1 = adis1657x_anglvel_scale[ADIS1657X_ID_NO_OFFSET(
+				adis->dev_id)].scale_m1;
+		*scale_m2 = adis1657x_anglvel_scale[ADIS1657X_ID_NO_OFFSET(
+				adis->dev_id)].scale_m2;
+		return 0;
+	case ADIS_TEMP_CHAN:
+		*scale_m1 = adis1657x_temp_scale[ADIS1657X_ID_NO_OFFSET(adis->dev_id)].scale_m1;
+		*scale_m2 = adis1657x_temp_scale[ADIS1657X_ID_NO_OFFSET(adis->dev_id)].scale_m2;
+		return 0;
+	case ADIS_DELTAANGL_CHAN:
+		*scale_m1 = adis1657x_deltaangl_scale[ADIS1657X_ID_NO_OFFSET(
+				adis->dev_id)].scale_m1;
+		*scale_m2 = adis1657x_deltaangl_scale[ADIS1657X_ID_NO_OFFSET(
+				adis->dev_id)].scale_m2;
+		return 0;
+	case ADIS_DELTAVEL_CHAN:
+		*scale_m1 = adis1657x_deltavelocity_scale[ADIS1657X_ID_NO_OFFSET(
+					adis->dev_id)].scale_m1;
+		*scale_m2 = adis1657x_deltavelocity_scale[ADIS1657X_ID_NO_OFFSET(
+					adis->dev_id)].scale_m2;
+		return 0;
+	default:
+		return -EINVAL;
+	}
+}
+
+/**
+ * @brief Read burst data.
+ * @param adis      - The adis device.
+ * @param data      - The burst read data structure to be populated.
+ * @param burst32   - True if 32-bit data is requested for accel
+ *		      and gyro (or delta angle and delta velocity)
+ *		      measurements, false if 16-bit data is requested.
+ * @param burst_sel - 0 if accel and gyro data is requested, 1
+ *		      if delta angle and delta velocity is requested.
+ * @param fifo_pop  - In case FIFO is present, will pop the fifo if
+ * 		      true. Unused if FIFO is not present.
+ * @param crc_check - If true CRC will be checked, if false check will be skipped.
+ * @return 0 in case of success, error code otherwise.
+ * -EAGAIN in case the request has to be sent again due to data being unavailable
+ * at the time of the request.
+ */
+int adis1657x_read_burst_data(struct adis_dev *adis,
+			      struct adis_burst_data *data,
+			      bool burst32, uint8_t burst_sel, bool fifo_pop, bool crc_check)
+{
+	int ret = 0;
+	uint8_t msg_size = ADIS1657X_MSG_SIZE_16_BIT_BURST_FIFO;
+	uint8_t idx;
+
+	if (adis->info->flags & ADIS_HAS_BURST32) {
+		if (adis->burst32 != burst32) {
+			ret = adis_write_burst32(adis, burst32);
+			if (ret)
+				return ret;
+			ret = -EAGAIN;
+		}
+		if (adis->burst_sel != burst_sel) {
+			ret = adis_write_burst_sel(adis, burst_sel);
+			if (ret)
+				return ret;
+			ret = -EAGAIN;
+		}
+	}
+
+	/* If burst32 or burst select has changed, wait for the next reading
+	   request to actually read the data, because the according data will be available
+	   only after the next data ready impulse. */
+	if (ret == -EAGAIN)
+		return ret;
+
+	if (burst32)
+		msg_size = ADIS1657X_MSG_SIZE_32_BIT_BURST_FIFO;
+
+	uint8_t buffer[msg_size + ADIS_READ_BURST_DATA_CMD_SIZE];
+
+	if (!fifo_pop)
+		buffer[0] = ADIS1657X_READ_BURST_DATA_NO_POP;
+	else
+		buffer[0] = ADIS_READ_BURST_DATA_CMD_MSB;
+
+	buffer[1] = ADIS_READ_BURST_DATA_CMD_LSB;
+
+	ret = no_os_spi_write_and_read(adis->spi_desc, buffer,
+				       msg_size + ADIS_READ_BURST_DATA_CMD_SIZE);
+	if (ret)
+		return ret;
+
+	for (idx = ADIS_READ_BURST_DATA_CMD_SIZE; idx < msg_size; idx++)
+		if (buffer[idx] != 0)
+			break;
+
+	if (idx == msg_size)
+		return -EAGAIN;
+
+	if (crc_check) {
+		/* Diag data not calculated in the checksum for this device. */
+		if (!adis_validate_checksum(&buffer[ADIS_READ_BURST_DATA_CMD_SIZE], msg_size,
+					    ADIS1657X_CHECKSUM_BUF_IDX_FIFO)) {
+			adis->diag_flags.checksum_err = true;
+			return -EINVAL;
+		}
+	}
+
+	adis->diag_flags.checksum_err = false;
+
+	uint8_t axis_data_size = 12;
+	if (burst32)
+		axis_data_size = 24;
+
+	uint8_t axis_data_offset = ADIS_READ_BURST_DATA_CMD_SIZE + 2;
+	uint8_t temp_offset = axis_data_offset + axis_data_size;
+	uint8_t data_cntr_offset = temp_offset + 2;
+
+	if (burst32) {
+		memcpy(&data->x_gyro_lsb, &buffer[axis_data_offset], 2);
+		memcpy(&data->x_gyro_msb, &buffer[axis_data_offset + 2], 2);
+		memcpy(&data->y_gyro_lsb, &buffer[axis_data_offset + 4], 2);
+		memcpy(&data->y_gyro_msb, &buffer[axis_data_offset + 6], 2);
+		memcpy(&data->z_gyro_lsb, &buffer[axis_data_offset + 8], 2);
+		memcpy(&data->z_gyro_msb, &buffer[axis_data_offset + 10], 2);
+		memcpy(&data->x_accel_lsb, &buffer[axis_data_offset + 12], 2);
+		memcpy(&data->x_accel_msb, &buffer[axis_data_offset + 14], 2);
+		memcpy(&data->y_accel_lsb, &buffer[axis_data_offset + 16], 2);
+		memcpy(&data->y_accel_msb, &buffer[axis_data_offset + 18], 2);
+		memcpy(&data->z_accel_lsb, &buffer[axis_data_offset + 20], 2);
+		memcpy(&data->z_accel_msb, &buffer[axis_data_offset + 22], 2);
+	} else {
+		data->x_gyro_lsb = 0;
+		memcpy(&data->x_gyro_msb, &buffer[axis_data_offset], 2);
+		data->y_gyro_lsb = 0;
+		memcpy(&data->y_gyro_msb, &buffer[axis_data_offset + 2], 2);
+		data->z_gyro_lsb = 0;
+		memcpy(&data->z_gyro_msb, &buffer[axis_data_offset + 4], 2);
+		data->x_accel_lsb = 0;
+		memcpy(&data->x_accel_msb, &buffer[axis_data_offset + 6], 2);
+		data->y_accel_lsb = 0;
+		memcpy(&data->y_accel_msb, &buffer[axis_data_offset + 8], 2);
+		data->z_accel_lsb = 0;
+		memcpy(&data->z_accel_msb, &buffer[axis_data_offset + 10], 2);
+	}
+
+	data->temp_msb = 0;
+	/* Temp data */
+	memcpy(&data->temp_lsb, &buffer[temp_offset], 2);
+	/* Counter data - aligned */
+	data->data_cntr_lsb = no_os_get_unaligned_be16(&buffer[data_cntr_offset]);;
+	data->data_cntr_msb = 0;
+	/* Update diagnosis flags at each reading */
+	adis_update_diag_flags(adis, buffer[ADIS_READ_BURST_DATA_CMD_SIZE]);
+
+	return 0;
+}
+
+const struct adis_chip_info adis1657x_chip_info = {
 	.field_map		= &adis1657x_def,
 	.sync_clk_freq_limits	= adis1657x_sync_clk_freq_limits,
 	.sampling_clk_limits	= adis1657x_sampling_clk_limits,
@@ -166,11 +392,13 @@ struct adis_chip_info adis1657x_chip_info = {
 	.read_delay 		= 5,
 	.write_delay 		= 0,
 	.cs_change_delay 	= 5,
-	.burst_request		= true,
 	.filt_size_var_b_max 	= 6,
 	.dec_rate_max 		= 1999,
 	.sync_mode_max 		= ADIS_SYNC_OUTPUT,
 	.fls_mem_wr_cntr_max 	= 100000,
 	.int_clk		= 2000,
 	.bias_corr_tbc_max	= 12,
+	.flags			= ADIS_HAS_BURST32 | ADIS_HAS_BURST_DELTA_DATA | ADIS_HAS_FIFO,
+	.get_scale		= &adis1657x_get_scale,
+	.read_burst_data	= &adis1657x_read_burst_data,
 };

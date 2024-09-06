@@ -391,14 +391,84 @@ int ad5791_spi_write_mask(struct ad5791_dev *dev,
 int ad5791_set_lin_comp(struct ad5791_dev *dev,
 			enum ad5791_lin_comp_select v_span)
 {
-	if(!dev || (dev->act_device != ID_AD5781 && dev->act_device != ID_AD5791))
+	if(!dev)
 		return -EINVAL;
 
-	if (!v_span)
-		v_span |= NO_OS_BIT(4);
+	switch(dev->act_device) {
+	case ID_AD5781:
+		if (v_span != AD5781_SPAN_UPTO_10V &&
+		    v_span != AD5781_SPAN_10V_TO_20V)
+			return -EINVAL;
+		break;
+	case ID_AD5791:
+		if (v_span == AD5781_SPAN_10V_TO_20V)
+			return -EINVAL;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (v_span)
+		v_span |= NO_OS_BIT(3);
 
 	return ad5791_spi_write_mask(dev,
 				     AD5791_REG_CTRL,
 				     AD5791_CTRL_LINCOMP_MASK,
 				     AD5791_CTRL_LINCOMP(v_span));
+}
+
+/***************************************************************************//**
+ * @brief	Trigger LDAC
+ *
+ * @param	dev - The device structure.
+ * @return	0 in case of success, negative error code otherwise.
+*******************************************************************************/
+int ad5791_ldac_trigger(struct ad5791_dev *dev)
+{
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	if (dev->gpio_ldac) {
+		ret = no_os_gpio_set_value(dev->gpio_ldac, NO_OS_GPIO_LOW);
+		if (ret)
+			return ret;
+
+		/* Delay must be greater than 14ns, per the datasheet. */
+		no_os_udelay(1);
+
+		return no_os_gpio_set_value(dev->gpio_ldac, NO_OS_GPIO_HIGH);
+	}
+
+	/* If no gpio is assigned use SW LDAC */
+	return ad5791_soft_instruction(dev, AD5791_SOFT_CTRL_LDAC);
+}
+
+/***************************************************************************//**
+ * @brief	Clear DAC channel output with the clearcode.
+ *
+ * @param	dev - The device structure.
+ * @return	0 in case of success, negative error code otherwise.
+*******************************************************************************/
+int ad5791_clear_async(struct ad5791_dev *dev)
+{
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	if (dev->gpio_clr) {
+		ret = no_os_gpio_set_value(dev->gpio_clr, NO_OS_GPIO_LOW);
+		if (ret)
+			return ret;
+
+		/* Delay must be greater than 50ns, per the datasheet. */
+		no_os_udelay(1);
+
+		return no_os_gpio_set_value(dev->gpio_clr, NO_OS_GPIO_HIGH);
+	}
+
+	/* If no gpio is assigned use SW CLR */
+	return ad5791_soft_instruction(dev, AD5791_SOFT_CTRL_CLR);
 }

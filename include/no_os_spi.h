@@ -52,6 +52,7 @@
 
 #define	NO_OS_SPI_CPHA	0x01
 #define	NO_OS_SPI_CPOL	0x02
+#define SPI_MAX_BUS_NUMBER 8
 
 /******************************************************************************/
 /*************************** Types Declarations *******************************/
@@ -108,6 +109,15 @@ struct no_os_spi_msg {
 };
 
 /**
+ * @struct no_os_platform_spi_delays
+ * @brief Delays resulted from components in the SPI signal path. The values is ns.
+ */
+struct no_os_platform_spi_delays {
+	uint32_t cs_delay_first;
+	uint32_t cs_delay_last;
+};
+
+/**
  * @struct no_os_spi_platform_ops
  * @brief Structure holding SPI function pointers that point to the platform
  * specific function
@@ -130,6 +140,7 @@ struct no_os_spi_init_param {
 	/** SPI bit order */
 	enum no_os_spi_bit_order	bit_order;
 	const struct no_os_spi_platform_ops *platform_ops;
+	struct no_os_platform_spi_delays platform_delays;
 	/**  SPI extra parameters (device specific) */
 	void		*extra;
 	/** Parent of the device */
@@ -137,11 +148,36 @@ struct no_os_spi_init_param {
 };
 
 /**
+ * @struct no_os_spibus_desc
+ * @brief SPI bus descriptor
+*/
+struct no_os_spibus_desc {
+	/** SPI bus mutex (lock) */
+	void 		*mutex;
+	/** SPI bus slave number*/
+	uint8_t         slave_number;
+	/** SPI bus device id */
+	uint32_t	device_id;
+	/** SPI bus max speed */
+	uint32_t	max_speed_hz;
+	/** SPI bus mode */
+	enum no_os_spi_mode	mode;
+	/** SPI bus bit order */
+	enum no_os_spi_bit_order	bit_order;
+	/** SPI bus platform ops */
+	const struct no_os_spi_platform_ops *platform_ops;
+	/** SPI bus extra */
+	void		*extra;
+};
+
+/**
  * @struct no_os_spi_desc
  * @brief Structure holding SPI descriptor.
  */
 struct no_os_spi_desc {
-	/** Device ID */
+	/** SPI bus address */
+	struct no_os_spibus_desc	*bus;
+	/** SPI bus number (0 for SPI0, 1 for SPI1, ...) */
 	uint32_t	device_id;
 	/** maximum transfer speed */
 	uint32_t	max_speed_hz;
@@ -152,6 +188,7 @@ struct no_os_spi_desc {
 	/** SPI bit order */
 	enum no_os_spi_bit_order	bit_order;
 	const struct no_os_spi_platform_ops *platform_ops;
+	struct no_os_platform_spi_delays platform_delays;
 	/**  SPI extra parameters (device specific) */
 	void		*extra;
 	/** Parent of the device */
@@ -170,6 +207,17 @@ struct no_os_spi_platform_ops {
 	int32_t (*write_and_read)(struct no_os_spi_desc *, uint8_t *, uint16_t);
 	/** Iterate over the spi_msg array and send all messages at once */
 	int32_t (*transfer)(struct no_os_spi_desc *, struct no_os_spi_msg *, uint32_t);
+	/** Iterate over the spi_msg array and send all messages using DMA.
+	 * Blocks until the transfer is completed.
+	 */
+	int32_t (*dma_transfer_sync)(struct no_os_spi_desc *, struct no_os_spi_msg *,
+				     uint32_t);
+	/** Iterate over the spi_msg array and send all messages using DMA.
+	 * Returns immediately after the transfer is started and invokes a
+	 * callback once all the messages have been transfered.
+	 */
+	int32_t (*dma_transfer_async)(struct no_os_spi_desc *, struct no_os_spi_msg *,
+				      uint32_t, void (*)(void *), void *);
 	/** SPI remove function pointer */
 	int32_t (*remove)(struct no_os_spi_desc *);
 };
@@ -194,6 +242,26 @@ int32_t no_os_spi_write_and_read(struct no_os_spi_desc *desc,
 int32_t no_os_spi_transfer(struct no_os_spi_desc *desc,
 			   struct no_os_spi_msg *msgs,
 			   uint32_t len);
+
+/* Transfer a list of messages using DMA. Wait until all transfers are done */
+int32_t no_os_spi_transfer_dma_sync(struct no_os_spi_desc *desc,
+				    struct no_os_spi_msg *msgs,
+				    uint32_t len);
+/*
+ * Transfer a list of messages using DMA. Return once the first one started and
+ * invoke a callback when they are done.
+ */
+int32_t no_os_spi_transfer_dma_async(struct no_os_spi_desc *desc,
+				     struct no_os_spi_msg *msgs,
+				     uint32_t len,
+				     void (*callback)(void *),
+				     void *ctx);
+
+/* Initialize SPI bus descriptor*/
+int32_t no_os_spibus_init(const struct no_os_spi_init_param *param);
+
+/* Free the resources allocated for SPI bus desc*/
+void no_os_spibus_remove(uint32_t bus_number);
 
 
 #endif // _NO_OS_SPI_H_

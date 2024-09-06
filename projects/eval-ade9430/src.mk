@@ -9,6 +9,7 @@ INCS += $(INCLUDE)/no_os_delay.h     \
 	$(INCLUDE)/no_os_print_log.h \
 	$(INCLUDE)/no_os_spi.h       \
 	$(INCLUDE)/no_os_irq.h      \
+	$(INCLUDE)/no_os_dma.h      \
 	$(INCLUDE)/no_os_list.h      \
 	$(INCLUDE)/no_os_timer.h      \
 	$(INCLUDE)/no_os_uart.h      \
@@ -16,6 +17,7 @@ INCS += $(INCLUDE)/no_os_delay.h     \
 	$(INCLUDE)/no_os_util.h \
 	$(INCLUDE)/no_os_units.h \
 	$(INCLUDE)/no_os_alloc.h \
+	$(INCLUDE)/no_os_mutex.h \
 	$(INCLUDE)/no_os_circular_buffer.h \
 	$(INCLUDE)/no_os_trng.h \
 	$(INCLUDE)/no_os_rtc.h \
@@ -27,6 +29,7 @@ INCS += $(PLATFORM_DRIVERS)/$(PLATFORM)_delay.h     \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_gpio.h      \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_spi.h       \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_i2c.h       \
+        $(PLATFORM_DRIVERS)/../common/$(PLATFORM)_dma.h       \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_gpio_irq.h  \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_irq.h       \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_rtc.h       \
@@ -42,6 +45,7 @@ SRCS += $(DRIVERS)/api/no_os_gpio.c \
 	$(DRIVERS)/api/no_os_gpio.c  \
 	$(DRIVERS)/api/no_os_irq.c  \
 	$(DRIVERS)/api/no_os_spi.c  \
+	$(DRIVERS)/api/no_os_dma.c  \
 	$(DRIVERS)/api/no_os_uart.c  \
 	$(DRIVERS)/api/no_os_timer.c  \
 	$(DRIVERS)/api/no_os_trng.c  \
@@ -49,11 +53,13 @@ SRCS += $(DRIVERS)/api/no_os_gpio.c \
 	$(NO-OS)/util/no_os_util.c	\
 	$(NO-OS)/util/no_os_circular_buffer.c \
 	$(NO-OS)/util/no_os_alloc.c \
+	$(NO-OS)/util/no_os_mutex.c \
 	$(DRIVERS)/display/nhd_c12832a1z/nhd_c12832a1z.c
 
 SRCS += $(PLATFORM_DRIVERS)/$(PLATFORM)_delay.c     \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_gpio.c      \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_spi.c       \
+        $(PLATFORM_DRIVERS)/../common/$(PLATFORM)_dma.c       \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_i2c.c       \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_rtc.c       \
         $(PLATFORM_DRIVERS)/$(PLATFORM)_gpio_irq.c  \

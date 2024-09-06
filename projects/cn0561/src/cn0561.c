@@ -88,10 +88,12 @@ int main()
 	struct ad713x_dev *cn0561_dev;
 	struct ad713x_init_param cn0561_init_param;
 	uint32_t i = 0, j;
+	uint32_t adc_channel;
 	int32_t ret;
 	const float lsb = 4.096 / (pow(2, 23));
 	float data;
 	uint32_t spi_eng_dma_flg = DMA_LAST | DMA_PARTIAL_REPORTING_EN;
+	uint32_t max_speed_hz = CORA_Z7S_DATA_CLK_FREQ_HZ;
 	struct spi_engine_offload_init_param spi_engine_offload_init_param;
 	struct spi_engine_offload_message spi_engine_offload_message;
 	uint32_t spi_eng_msg_cmds[1];
@@ -115,6 +117,7 @@ int main()
 		.platform_ops = &xil_gpio_ops,
 		.extra = &gpio_extra_param
 	};
+	max_speed_hz = ZED_DATA_CLK_FREQ_HZ;
 #endif
 	struct no_os_spi_desc *spi_eng_desc;
 	struct spi_engine_init_param spi_eng_init_param  = {
@@ -126,25 +129,36 @@ int main()
 	};
 	const struct no_os_spi_init_param spi_eng_init_prm  = {
 		.chip_select = CN0561_SPI_CS,
-		.max_speed_hz = 24000000,
+		.max_speed_hz = max_speed_hz,
 		.mode = NO_OS_SPI_MODE_1,
 		.platform_ops = &spi_eng_platform_ops,
 		.extra = (void*)&spi_eng_init_param,
 	};
 
 	struct no_os_pwm_desc *axi_pwm;
-	struct axi_pwm_init_param axi_zed_pwm_init = {
+	struct axi_pwm_init_param axi_zed_pwm_init_trigger = {
 		.base_addr = XPAR_ODR_GENERATOR_BASEADDR,
 		.ref_clock_Hz = 100000000,
 		.channel = 0
 	};
-
-	struct no_os_pwm_init_param axi_pwm_init = {
-		.period_ns = 3400,
-		.duty_cycle_ns = 600,
+	struct axi_pwm_init_param axi_zed_pwm_init_odr = {
+		.base_addr = XPAR_ODR_GENERATOR_BASEADDR,
+		.ref_clock_Hz = 100000000,
+		.channel = 1
+	};
+	struct no_os_pwm_init_param axi_pwm_init_trigger = {
+		.period_ns = 1000,
+		.duty_cycle_ns = 1,
+		.phase_ns = 45,
+		.platform_ops = &axi_pwm_ops,
+		.extra = &axi_zed_pwm_init_trigger
+	};
+	struct no_os_pwm_init_param axi_pwm_init_odr = {
+		.period_ns = 1000,
+		.duty_cycle_ns = 130,
 		.phase_ns = 0,
 		.platform_ops = &axi_pwm_ops,
-		.extra = &axi_zed_pwm_init
+		.extra = &axi_zed_pwm_init_odr
 	};
 
 	gpio_extra_param.device_id = GPIO_DEVICE_ID;
@@ -171,7 +185,7 @@ int main()
 	cn0561_init_param.pnd = true;
 	cn0561_init_param.spi_init_prm.chip_select = CN0561_SPI_CS;
 	cn0561_init_param.spi_init_prm.device_id = SPI_DEVICE_ID;
-	cn0561_init_param.spi_init_prm.max_speed_hz = 1000000;
+	cn0561_init_param.spi_init_prm.max_speed_hz = 10000000;
 	cn0561_init_param.spi_init_prm.mode = NO_OS_SPI_MODE_0;
 	cn0561_init_param.spi_init_prm.platform_ops = &xil_spi_ops;
 	cn0561_init_param.spi_init_prm.extra = (void *)&spi_engine_init_params;
@@ -190,13 +204,23 @@ int main()
 	if (ret != 0)
 		return -1;
 
-	ret = no_os_pwm_init(&axi_pwm, &axi_pwm_init);
+	ret = no_os_pwm_init(&axi_pwm, &axi_pwm_init_trigger);
+	if (ret != 0)
+		return ret;
+
+	ret = no_os_pwm_init(&axi_pwm, &axi_pwm_init_odr);
 	if (ret != 0)
 		return ret;
 
 	ret = ad713x_init(&cn0561_dev, &cn0561_init_param);
 	if (ret != 0)
 		return -1;
+
+	for (adc_channel = CH0; adc_channel <= CH3; adc_channel++) {
+		ret = ad713x_dig_filter_sel_ch(cn0561_dev, SINC3, adc_channel);
+		if (ret != 0)
+			return -1;
+	} /* Select SINC3 filtering, enable higher data convertion rates */
 
 	no_os_mdelay(1000);
 
@@ -209,7 +233,7 @@ int main()
 
 	spi_engine_offload_init_param.rx_dma_baseaddr = CN0561_DMA_BASEADDR;
 	spi_engine_offload_init_param.offload_config = OFFLOAD_RX_EN;
-	spi_engine_offload_init_param.dma_flags = &spi_eng_dma_flg;
+	spi_engine_offload_init_param.dma_flags = spi_eng_dma_flg;
 
 	ret = no_os_spi_init(&spi_eng_desc, &spi_eng_init_prm);
 	if (ret != 0)
@@ -305,6 +329,13 @@ int main()
 			j++;
 		}
 	}
+
+#ifdef CN0561_REG_DUMP
+	ret = ad713x_spi_reg_dump(cn0561_dev);
+	if (ret != 0)
+		return ret;
+
+#endif /* AD4134 DEVICE REG DUMP */
 
 	ad713x_remove(cn0561_dev);
 	print("Bye\n\r");

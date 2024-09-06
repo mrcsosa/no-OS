@@ -1,6 +1,6 @@
 
 # no-OS
-[![Build Status](https://dev.azure.com/AnalogDevices/OpenSource/_apis/build/status/analogdevicesinc.no-OS?branchName=master)](https://dev.azure.com/AnalogDevices/OpenSource/_build/latest?definitionId=13&branchName=master) [![Codacy Badge](https://api.codacy.com/project/badge/Grade/9f57b0bbc3f6465ea211aa6c96afcb23)](https://www.codacy.com/gh/analogdevicesinc/no-OS?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=analogdevicesinc/no-OS&amp;utm_campaign=Badge_Grade)
+[![Build Status](https://dev.azure.com/AnalogDevices/no-OS/_apis/build/status%2Fanalogdevicesinc.no-OS?branchName=main)](https://dev.azure.com/AnalogDevices/no-OS/_build/latest?definitionId=48&branchName=main)
 
 [Analog Devices Inc.](http://www.analog.com/en/index.html) Software drivers for systems without OS.
 
@@ -13,7 +13,7 @@ The majority of ADI's products are peripherals to a non-ADI digital engine (FPGA
 
 For more information about no-OS drivers, please visit our [wiki](https://wiki.analog.com/resources/no-os) page.
 
-Code documentation is automatically generated using Doxygen tool, available at [no-OS Github Pages](http://analogdevicesinc.github.io/no-OS/).
+Code documentation is automatically generated using Doxygen tool, available at [no-OS Github Pages](http://analogdevicesinc.github.io/no-OS/doxygen/).
 
 ## Build
 
@@ -27,7 +27,7 @@ When writing code, please follow the [style guidelines](https://github.com/analo
 
   * If you want to use the most stable code base, always use the [latest release branch]( https://github.com/analogdevicesinc/no-OS/branches/all?utf8=%E2%9C%93&query=201).
 
-  * If you want to use the greatest and latest, check out the master branch.
+  * If you want to use the greatest and latest, check out the main branch.
 
 
 ## Support

@@ -1,12 +1,24 @@
 {
-      "xilinx": {
-        "uart_print": {
-              "flags" : "NEW_CFLAGS=-DSPI_ENGINE_OFFLOAD_EXAMPLE=0",
-              "hardware" : ["ad40xx_fmc_zed"]
-        },
-        "offload_example": {
-              "flags" : "NEW_CFLAGS=-DSPI_ENGINE_OFFLOAD_EXAMPLE=1",
-              "hardware" : ["ad40xx_fmc_zed"]
-        }
-      }
+  "xilinx": {
+    "basic": {
+      "flags": "BASIC_EXAMPLE=y IIO_EXAMPLE=n",
+      "hardware": [
+        "pulsar_adc_zed"
+      ]
+    },
+    "iio": {
+      "flags": "BASIC_EXAMPLE=n IIO_EXAMPLE=y",
+      "hardware": [
+        "pulsar_adc_zed"
+      ]
+    }
+  },
+  "stm32": {
+    "basic": {
+      "flags": "BASIC_EXAMPLE=y IIO_EXAMPLE=n"
+    },
+    "iio": {
+      "flags": "BASIC_EXAMPLE=n IIO_EXAMPLE=y"
+    }
+  }
 }

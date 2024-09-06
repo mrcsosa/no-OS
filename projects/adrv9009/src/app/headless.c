@@ -81,7 +81,6 @@ int32_t start_iiod(struct axi_dmac *rx_dmac, struct axi_dmac *tx_dmac,
 		.platform_ops = &xil_uart_ops
 	};
 
-#ifndef ADRV9008_2
 	iio_axi_adc_init_par = (struct iio_axi_adc_init_param) {
 		.rx_adc = rx_adc,
 		.rx_dmac = rx_dmac,
@@ -90,7 +89,7 @@ int32_t start_iiod(struct axi_dmac *rx_dmac, struct axi_dmac *tx_dmac,
 						     uint32_t))Xil_DCacheInvalidateRange
 #endif
 	};
-#endif
+
 #ifndef ADRV9008_1
 	iio_axi_dac_init_par = (struct iio_axi_dac_init_param) {
 		.tx_dac = tx_dac,
@@ -101,11 +100,9 @@ int32_t start_iiod(struct axi_dmac *rx_dmac, struct axi_dmac *tx_dmac,
 	};
 #endif
 
-#ifndef ADRV9008_2
 	status = iio_axi_adc_init(&iio_axi_adc_desc, &iio_axi_adc_init_par);
 	if (status < 0)
 		return status;
-#endif
 
 #ifndef ADRV9008_1
 	status = iio_axi_dac_init(&iio_axi_dac_desc, &iio_axi_dac_init_par);
@@ -113,19 +110,15 @@ int32_t start_iiod(struct axi_dmac *rx_dmac, struct axi_dmac *tx_dmac,
 		return status;
 #endif
 
-#ifndef ADRV9008_2
 	iio_axi_adc_get_dev_descriptor(iio_axi_adc_desc, &adc_dev_desc);
-#endif
 #ifndef ADRV9008_1
 	iio_axi_dac_get_dev_descriptor(iio_axi_dac_desc, &dac_dev_desc);
 #endif
 
-#ifndef ADRV9008_2
 	struct iio_data_buffer read_buff = {
 		.buff = (void *)ADC_DDR_BASEADDR,
 		.size = 0xFFFFFFFF,
 	};
-#endif
 #ifndef ADRV9008_1
 	struct iio_data_buffer write_buff = {
 		.buff = (void *)DAC_DDR_BASEADDR,
@@ -134,10 +127,8 @@ int32_t start_iiod(struct axi_dmac *rx_dmac, struct axi_dmac *tx_dmac,
 #endif
 
 	struct iio_app_device devices[] = {
-#ifndef ADRV9008_2
 		IIO_APP_DEVICE("axi_adc", iio_axi_adc_desc, adc_dev_desc,
 			       &read_buff, NULL, NULL),
-#endif
 #ifndef ADRV9008_1
 		IIO_APP_DEVICE("axi_dac", iio_axi_dac_desc, dac_dev_desc,
 			       NULL, &write_buff, NULL)
@@ -206,6 +197,13 @@ int main(void)
 	};
 	struct axi_adc *rx_adc;
 
+	struct axi_adc_init rx_os_adc_init = {
+		"rx_os_adc",
+		RX_OS_CORE_BASEADDR,
+		TALISE_NUM_CHANNELS / 2
+	};
+	struct axi_adc *rx_os_adc;
+
 	struct axi_dac_init tx_dac_init = {
 		"tx_dac",
 		TX_CORE_BASEADDR,
@@ -221,6 +219,13 @@ int main(void)
 		IRQ_DISABLED
 	};
 	struct axi_dmac *rx_dmac;
+
+	struct axi_dmac_init rx_os_dmac_init = {
+		"rx_os_dmac",
+		RX_OS_DMA_BASEADDR,
+		IRQ_DISABLED
+	};
+	struct axi_dmac *rx_os_dmac;
 
 	struct axi_dmac_init tx_dmac_init = {
 		"tx_dmac",
@@ -355,7 +360,14 @@ int main(void)
 	}
 
 #endif
+
 #ifndef ADRV9008_1
+	status = axi_adc_init(&rx_os_adc, &rx_os_adc_init);
+	if (status) {
+		printf("OBS axi_adc_init() failed with status %d\n", status);
+		goto error_3;
+	}
+
 	status = axi_dmac_init(&tx_dmac, &tx_dmac_init);
 	if (status) {
 		printf("axi_dmac_init() tx init error: %d\n", status);
@@ -371,6 +383,12 @@ int main(void)
 	}
 #endif
 
+	status = axi_dmac_init(&rx_os_dmac, &rx_os_dmac_init);
+	if (status) {
+		printf("OBS axi_dmac_init() rx init error: %d\n", status);
+		goto error_3;
+	}
+
 #ifdef DMA_EXAMPLE
 	gpio_init_plddrbypass.extra = &hal_gpio_param;
 #ifndef ALTERA_PLATFORM
@@ -384,9 +402,10 @@ int main(void)
 		printf("no_os_gpio_get() failed with status %d", status);
 		goto error_3;
 	}
-	no_os_gpio_direction_output(gpio_plddrbypass, 0);
+	no_os_gpio_direction_output(gpio_plddrbypass, 1);
 
 #ifndef ADRV9008_1
+	axi_dac_set_datasel(tx_dac, -1, AXI_DAC_DATA_SEL_DMA);
 	axi_dac_load_custom_data(tx_dac, sine_lut_iq,
 				 NO_OS_ARRAY_SIZE(sine_lut_iq),
 				 DAC_DDR_BASEADDR);
@@ -417,7 +436,6 @@ int main(void)
 #endif
 
 	/* Transfer 16384 samples from ADC to MEM */
-#ifndef ADRV9008_2
 	struct axi_dma_transfer transfer_rx = {
 		// Number of bytes to write/read
 		.size = 16384 * TALISE_NUM_CHANNELS *
@@ -431,8 +449,21 @@ int main(void)
 		// Address of data destination
 		.dest_addr = (uintptr_t)(DDR_MEM_BASEADDR + 0x800000)
 	};
-	axi_dmac_transfer_start(rx_dmac, &transfer_rx);
+#ifndef ADRV9008_2
+	status = axi_dmac_transfer_start(rx_dmac, &transfer_rx);
+	if(status)
+		return status;
+	printf("Rx ");
 	status = axi_dmac_transfer_wait_completion(rx_dmac, 500);
+	uint8_t num_chans = rx_adc_init.num_channels;
+#else
+	status = axi_dmac_transfer_start(rx_os_dmac, &transfer_rx);
+	if(status)
+		return status;
+	printf("Rx obs ");
+	status = axi_dmac_transfer_wait_completion(rx_os_dmac, 500);
+	uint8_t num_chans = rx_os_adc_init.num_channels;
+#endif
 	if(status)
 		return status;
 #ifndef ALTERA_PLATFORM
@@ -440,13 +471,23 @@ int main(void)
 				  16384 * TALISE_NUM_CHANNELS *
 				  NO_OS_DIV_ROUND_UP(talInit.jesd204Settings.framerA.Np, 8));
 #endif
-#endif
+	printf("DMA_EXAMPLE: address=%#lx samples=%lu channels=%u bits=%u\n",
+	       transfer_rx.dest_addr, transfer_rx.size / NO_OS_DIV_ROUND_UP(
+		       talInit.jesd204Settings.framerA.Np, 8),
+	       num_chans,
+	       8 * NO_OS_DIV_ROUND_UP(talInit.jesd204Settings.framerA.Np, 8));
 #endif
 
 #ifdef IIO_SUPPORT
+	// Allow time to display messages correctly
+	no_os_mdelay(100);
+#ifdef ADRV9008_2
+	status = start_iiod(rx_os_dmac, tx_dmac, rx_os_adc, tx_dac);
+#else
 	status = start_iiod(rx_dmac, tx_dmac, rx_adc, tx_dac);
+#endif
 	if (status)
-		printf("Tinyiiod error: %d\n", status);
+		printf("iiod error: %d\n", status);
 #endif // IIO_SUPPORT
 
 	for (t = TALISE_A; t < TALISE_DEVICE_ID_MAX; t++) {

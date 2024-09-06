@@ -110,16 +110,32 @@ static int32_t max_uart_write(struct no_os_uart_desc *desc, const uint8_t *data,
 			      uint32_t bytes_number)
 {
 	int32_t ret;
+	int32_t transfered = 0;
+	int block_size = 8;
 
 	if(!desc || !data || !bytes_number)
 		return -EINVAL;
 
-	ret = MXC_UART_Write(MXC_UART_GET_UART(desc->device_id), data,
-			     (int *)&bytes_number);
-	if (ret != E_SUCCESS)
-		return -EIO;
+	while (bytes_number) {
+		if (bytes_number > 8)
+			block_size = 8;
+		else
+			block_size = bytes_number;
 
-	return bytes_number;
+		while(!(MXC_UART_GetStatus(MXC_UART_GET_UART(desc->device_id)) &
+			MXC_F_UART_STATUS_TX_EM));
+		ret = MXC_UART_Write(MXC_UART_GET_UART(desc->device_id),
+				     (uint8_t *)(data + transfered),
+				     &block_size);
+
+		transfered += block_size;
+		bytes_number -= block_size;
+
+		if (ret != E_SUCCESS)
+			return -EIO;
+	}
+
+	return transfered;
 }
 
 /**
@@ -233,6 +249,7 @@ static int32_t max_uart_init(struct no_os_uart_desc **desc,
 		ret = -ENOMEM;
 		goto error;
 	}
+	descriptor->extra = max_uart;
 	uart_regs = MXC_UART_GET_UART(param->device_id);
 	eparam = param->extra;
 
@@ -382,10 +399,31 @@ error:
  */
 static int32_t max_uart_remove(struct no_os_uart_desc *desc)
 {
+	struct max_uart_desc *extra;
+	struct no_os_callback_desc discard = {
+		.peripheral = NO_OS_UART_IRQ,
+		.event = NO_OS_EVT_UART_RX_COMPLETE,
+		.handle = MXC_UART_GET_UART(desc->device_id)
+	};
+	int ret;
+
 	if (!desc)
 		return -EINVAL;
 
+	extra = desc->extra;
+
+	if (desc->rx_fifo) {
+		no_os_irq_disable(extra->nvic, MXC_UART_GET_IRQ(desc->device_id));
+		no_os_irq_unregister_callback(extra->nvic,
+					      MXC_UART_GET_IRQ(desc->device_id),
+					      &discard);
+		no_os_irq_ctrl_remove(extra->nvic);
+		lf256fifo_remove(desc->rx_fifo);
+		no_os_free(desc->rx_fifo);
+	}
+
 	MXC_UART_Shutdown(MXC_UART_GET_UART(desc->device_id));
+	no_os_free(desc->extra);
 	no_os_free(desc);
 
 	return 0;

@@ -17,6 +17,7 @@ AR=arm-none-eabi-ar
 AS=arm-none-eabi-gcc
 GDB=gdb-multiarch
 OC=arm-none-eabi-objcopy	
+SIZE=arm-none-eabi-size
 
 # ELF2UF2 is used to convert elf binary in uf2 format
 # For flashing UF2 file can be dragged onto USB Mass Storage Device 
@@ -34,8 +35,6 @@ UF2 = $(basename $(BINARY)).uf2
 #----------------------------------------------------------------------
 TARGET = rp2040
 PROJECT_BUILD = $(BUILD_DIR)/app
-PLATFORM_RELATIVE_PATH = $1
-PLATFORM_FULL_PATH = $1
 
 LSCRIPT = $(PICO_SDK_PATH)/src/rp2_common/pico_standard_link/memmap_default.ld
 
@@ -415,41 +414,40 @@ LDFLAGS += -Wl,--wrap=puts
 LDFLAGS += -Wl,--wrap=putchar
 LDFLAGS += -Wl,--wrap=getchar
 
-$(PROJECT_TARGET):
+$(PLATFORM)_project:
 	$(call print, Buildingfortarget $(TARGET))
 	$(call print, CreatingIDEproject)
-	$(MUTE) $(call mk_dir, $(BUILD_DIR)) $(HIDE)
-	$(MUTE) $(call set_one_time_rule, $@)
+	$(call mk_dir, $(BUILD_DIR)) $(HIDE)
 
 $(PLATFORM)_sdkopen:
-	$(shell python3 $(PLATFORM_TOOLS)/run_config.py $(BINARY) $(PROJECT) $(PICO_SDK_PATH) $(TARGET) $(JLINK_SERVER_PATH))
-	$(MUTE) code $(PROJECT)
+	$(shell python $(PLATFORM_TOOLS)/run_config.py $(BINARY) $(PROJECT) $(PICO_SDK_PATH) $(TARGET) $(JLINK_SERVER_PATH))
+	code $(PROJECT)
 
 $(PLATFORM)_sdkclean: clean
 
 $(PLATFORM)_sdkbuild: build
 
 $(HEX): $(BINARY)
-	$(MUTE) $(call print,[HEX] $(notdir $@))
-	$(MUTE) $(OC) -O ihex $(BINARY) $(HEX)
-	$(MUTE) $(call print, $(notdir $@) isready)
+	$(call print,[HEX] $(notdir $@))
+	$(OC) -O ihex $(BINARY) $(HEX)
+	$(call print, $(notdir $@) isready)
 
 $(UF2): $(BINARY)
-	$(MUTE) $(call print,[UF2] $(notdir $@))
-	$(MUTE) $(ELF2UF2) $(BINARY) $(UF2)
-	$(MUTE) $(call print,$(notdir $@) isready)
+	$(call print,[UF2] $(notdir $@))
+	$(ELF2UF2) $(BINARY) $(UF2)
+	$(call print,$(notdir $@) isready)
 
 .SECONDEXPANSION:
 $(BOOTSRC): $(BOOTSRCS)
-	$(MUTE) @mkdir -p $(@D)
-	$(MUTE) $(CC) $(BOOT_CFLAGS) -T $(BOOTLD) $^ -o $(BOOTELF)
-	$(MUTE) $(OC) -Obinary $(BOOTELF) $(BOOTBIN)
-	$(MUTE) $(PYTHON3) $(BOOT_STAGE2)/pad_checksum -s 0xffffffff $(BOOTBIN) $@
+	@mkdir -p $(@D)
+	$(CC) $(BOOT_CFLAGS) -T $(BOOTLD) $^ -o $(BOOTELF)
+	$(OC) -Obinary $(BOOTELF) $(BOOTBIN)
+	python $(BOOT_STAGE2)/pad_checksum -s 0xffffffff $(BOOTBIN) $@
 
 .SECONDEXPANSION:
 $(BOOTOBJ): $(BOOTSRC)
-	$(MUTE) @mkdir -p $(@D)
-	$(MUTE) $(COMPILE.s)
+	@mkdir -p $(@D)
+	$(COMPILE.s)
 
 .PHONY: $(BINARY).gdb
 $(BINARY).gdb:
@@ -466,6 +464,8 @@ $(PLATFORM)_run:all
 	openocd -f interface/jlink.cfg -c "transport select swd" -c "adapter_khz 6000" \
 	-f target/rp2040.cfg -c "program $(BINARY) reset exit"
 
+$(PLATFORM)_reset:
+
 .PHONY:debug
 debug: all $(BINARY).gdb start_openocd
 	$(GDB) --command=$(BINARY).gdb
@@ -473,22 +473,20 @@ debug: all $(BINARY).gdb start_openocd
 
 LINK_SRCS = y
 link_srcs: 
-	$(MUTE) $(foreach file,$(sort $(PLATFORM_SRCS)),\
-		$(call update_file,$(file),$(call relative_to_project,$(file))) $(HIDE)\
-		$(cmd_separator)) echo . $(HIDE)
-	$(MUTE) $(foreach file,$(sort $(PLATFORM_INCLUDE_FILES)),\
-		$(call update_file,$(file),$(call relative_to_project,$(file))) $(HIDE)\
-		$(cmd_separator)) echo . $(HIDE)
+	$(foreach file,$(sort $(PLATFORM_SRCS)),\
+		$(call update_file,$(file),$(call relative_to_project,$(file))) $(HIDE);) echo . $(HIDE)
+	$(foreach file,$(sort $(PLATFORM_INCLUDE_FILES)),\
+		$(call update_file,$(file),$(call relative_to_project,$(file))) $(HIDE);) echo . $(HIDE)
 
-post_build: $(HEX) $(UF2) link_srcs
+$(PLATFORM)_post_build: $(HEX) $(UF2) link_srcs
 
 clean_hex:
 	@$(call print, [Delete] $(HEX))
-	$(MUTE)$(call remove_file, $(HEX)) $(HIDE)
+	$(call remove_file, $(HEX)) $(HIDE)
 
 clean_uf2:
 	@$(call print, [Delete] $(UF2))
-	$(MUTE) $(call remove_file, $(UF2)) $(HIDE)
+	$(call remove_file, $(UF2)) $(HIDE)
 
 clean:clean_hex clean_uf2
 

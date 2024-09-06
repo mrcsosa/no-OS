@@ -47,6 +47,12 @@
 #include <stdint.h>
 
 /******************************************************************************/
+/********************** Macros and Constants Definitions **********************/
+/******************************************************************************/
+
+#define TIMER_MAX_TABLE 4
+
+/******************************************************************************/
 /*************************** Types Declarations *******************************/
 /******************************************************************************/
 
@@ -55,6 +61,8 @@
  * @brief Structure holding timer descriptor
  */
 struct no_os_timer_desc {
+	/** Timer mutex*/
+	void *mutex;
 	/** timer ID */
 	uint16_t id;
 	/** timer count frequency (Hz) */
@@ -125,7 +133,7 @@ struct no_os_timer_platform_ops {
 
 /* Initialize hardware timer and the handler structure associated with it. */
 int32_t no_os_timer_init(struct no_os_timer_desc **desc,
-			 struct no_os_timer_init_param *param);
+			 const struct no_os_timer_init_param *param);
 
 /* Free the memory allocated by timer_setup(). */
 int32_t no_os_timer_remove(struct no_os_timer_desc *desc);

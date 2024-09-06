@@ -40,6 +40,8 @@
 #ifndef IIOD_PRIVATE_H
 #define IIOD_PRIVATE_H
 
+#include "iio.h"
+
 #define IIOD_WR				0x1
 #define IIOD_ENDL			0x2
 #define IIOD_RD				0x4
@@ -175,6 +177,8 @@ struct iiod_desc {
 	char *xml;
 	/* XML length in bytes */
 	uint32_t xml_len;
+	/* Backend used by IIOD */
+	enum physical_link_type phy_type;
 };
 
 #endif //IIOD_PRIVATE_H

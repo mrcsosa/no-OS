@@ -5,17 +5,17 @@ export EXTRA_LIBS_NAMES
 export EXTRA_LIBS_PATHS
 
 #	IIO
-ifeq (y,$(strip $(TINYIIOD)))
+ifeq (y,$(strip $(IIOD)))
 
 include $(NO-OS)/tools/scripts/iio_srcs.mk
 
-CFLAGS += -DTINYIIOD_VERSION_MAJOR=0	 \
-	   -DTINYIIOD_VERSION_MINOR=1		 \
-	   -DTINYIIOD_VERSION_GIT=0x$(shell git -C $(NO-OS)/libraries/iio/libtinyiiod/ \
-	   				rev-parse --short HEAD) \
-	   -DIIOD_BUFFER_SIZE=0x1000		 \
-	   -D_USE_STD_INT_TYPES
 CFLAGS += -DIIO_SUPPORT
+endif
+
+# FreeRTOS
+ifeq '$(FREERTOS)' 'y'
+CFLAGS += -DFREERTOS
+include $(NO-OS)/tools/scripts/freertos.mk
 endif
 
 #	MBEDTLS
@@ -106,6 +106,13 @@ $(AZURE_LIBS):
 # Custom settings
 CFLAGS += -I$(AZURE_DIR)/sdk/inc
 
+endif
+
+ifneq ($(if $(findstring lwip, $(LIBRARIES)), 1),)
+include $(NO-OS)/tools/scripts/lwip.mk
+INCS += $(NO-OS)/libraries/lwip/arch
+INCS += $(NO-OS)/libraries/lwip/configs/lwipcfg.h
+INCS += $(NO-OS)/libraries/lwip/configs/lwipopts.h
 endif
 
 LIB_TARGETS			+= $(IIO_LIB) $(MBEDTLS_LIBS) $(FATFS_LIB) $(MQTT_LIB) $(AZURE_LIBS)

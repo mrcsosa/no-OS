@@ -44,7 +44,7 @@
 /***************************** Include Files **********************************/
 /******************************************************************************/
 
-#include "iio_adis.h"
+#include "iio_adis_internals.h"
 #include "adis1657x.h"
 
 /******************************************************************************/
@@ -53,7 +53,8 @@
 
 /*! Initialize adis1657x iio device. */
 int adis1657x_iio_init(struct adis_iio_dev **iio_dev,
-		       struct adis_init_param *init_param);
+		       struct adis_init_param *init_param,
+		       struct iio_hw_trig *adis1657x_trig_desc);
 
 /*! Remove adis1657x iio device. */
 void adis1657x_iio_remove(struct adis_iio_dev *desc);

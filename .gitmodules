@@ -4,12 +4,12 @@
 [submodule "libraries/mqtt/paho.mqtt.embedded-c"]
 	path = libraries/mqtt/paho.mqtt.embedded-c
 	url = https://github.com/eclipse/paho.mqtt.embedded-c
-[submodule "libraries/iio/libtinyiiod"]
-	path = libraries/iio/libtinyiiod
-	url = https://github.com/analogdevicesinc/libtinyiiod
 [submodule "libraries/azure-sdk-for-c"]
 	path = libraries/azure/azure-sdk-for-c
 	url = https://github.com/Azure/azure-sdk-for-c.git
 [submodule "libraries/mbed/mbed-os"]
 	path = libraries/mbed/mbed-os
 	url = https://github.com/ARMmbed/mbed-os
+[submodule "libraries/lwip/lwip"]
+	path = libraries/lwip/lwip
+	url = https://github.com/lwip-tcpip/lwip

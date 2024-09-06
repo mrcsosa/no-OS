@@ -213,6 +213,7 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 			.num = 3,		// DEV_SYSREF
 			.divider = 1536,	// 1.953125 MHz
 			.driver_mode = 2,	// LVDS
+			.is_sysref = true,
 		}, {
 			.num = 6,		// CORE_CLK_TX
 			.divider = 12,		// 250 MHz
@@ -233,6 +234,7 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 			.num = 13,		// FPGA_SYSREF
 			.divider = 1536,	// 1.953125 MHz
 			.driver_mode = 2,	// LVDS
+			.is_sysref = true,
 		}
 	};
 #elif defined(PLATFORM_MB)
@@ -249,6 +251,7 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 			.num = 3,		// DEV_SYSREF
 			.divider = 1536,	// 1.953125 MHz
 			.driver_mode = 2,	// LVDS
+			.is_sysref = true,
 		}, {
 			.num = 6,		// CORE_CLK_TX
 			.divider = 12,		// 250 MHz
@@ -269,6 +272,7 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 			.num = 13,		// FPGA_SYSREF
 			.divider = 1536,	// 1.953125 MHz
 			.driver_mode = 2,	// LVDS
+			.is_sysref = true,
 		}
 	};
 #endif
@@ -285,6 +289,8 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 		//.vcxo_freq = 122880000,
 		.clkin_freq = {100000000, 10000000, 0, 0},
 		.vcxo_freq = 100000000,
+		.pfd1_limit = 0,
+		.pll1_cp_current = 0,
 		.pll2_freq = 3000000000,
 		.pll1_loop_bw = 200,
 		.sysref_timer_div = 1024,
@@ -294,6 +300,7 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 		.num_channels = sizeof(chan_spec) /
 		sizeof(struct hmc7044_chan_spec),
 		.pll1_ref_prio_ctrl = 0xe4,
+		.pll1_ref_autorevert_en = false,
 		.sync_pin_mode = 0x1,
 		.high_performance_mode_clock_dist_en = false,
 		.pulse_gen_mode = 0x0,
@@ -339,13 +346,25 @@ int32_t app_clock_init(struct no_os_clk dev_refclk[MULTIDEVICE_INSTANCE_COUNT])
 	}
 #else
 	hmc7044_hw.dev = hmc7044_dev;
-	hmc7044_hw.dev_clk_recalc_rate = hmc7044_clk_recalc_rate;
-	hmc7044_hw.dev_clk_round_rate = hmc7044_clk_round_rate;
-	hmc7044_hw.dev_clk_set_rate = hmc7044_clk_set_rate;
 
 	dev_refclk[0].hw = &hmc7044_hw;
-	dev_refclk[0].hw_ch_num = 0;
+	dev_refclk[0].hw_ch_num = 2;
 	dev_refclk[0].name = "dev_refclk";
+
+	struct no_os_clk_desc *clk_desc;
+	struct no_os_clk_init_param clk_desc_init = { 0 };
+
+	clk_desc_init.dev_desc = hmc7044_dev;
+	clk_desc_init.hw_ch_num = 2;
+	clk_desc_init.name = "dev_refclk";
+	clk_desc_init.platform_ops = &hmc7044_clk_ops;
+
+	ret = no_os_clk_init(&clk_desc, &clk_desc_init);
+	if (ret)
+		return ret;
+
+	dev_refclk[0].clk_desc = clk_desc;
+
 #endif
 
 	return 0;

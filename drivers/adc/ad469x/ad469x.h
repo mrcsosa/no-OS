@@ -97,6 +97,7 @@
 #define AD469x_REG_THRESHOLD_UB(x)  ((x << 1) | 0x40)
 #define AD469x_REG_THRESHOLD_LB(x)  ((x << 1) | 0x60)
 #define AD469x_REG_HYST_IN(x)		((x << 1) | 0x80)
+#define AD469x_REG_OFFSET_IN(x)		((x << 1) | 0xA0)
 #define AD469x_REG_GAIN_IN(x)       ((x << 1) | 0x0C0)
 #define AD469x_REG_AS_SLOT(x)		((x & 0x7F) | 0x100)
 
@@ -160,7 +161,6 @@
 #define AD469x_CHANNEL(x)			(NO_OS_BIT(x) & 0xFFFF)
 #define AD469x_CHANNEL_NO			16
 #define AD469x_SLOTS_NO				0x80
-#define AD469x_CHANNEL_TEMP			16
 
 /******************************************************************************/
 /*************************** Types Declarations *******************************/
@@ -208,6 +208,7 @@ enum ad469x_supported_dev_ids {
 	ID_AD4695,
 	ID_AD4696,
 	ID_AD4697,
+	ID_AD4698,
 };
 
 /**
@@ -229,6 +230,27 @@ enum ad469x_pin_pairing {
 	AD469x_INx_REF_GND,
 	AD469x_INx_COM,
 	AD469x_INx_EVEN_ODD
+};
+
+/**
+ * @enum ad469x_ref_set
+ * @brief Reference input range control
+ */
+enum ad469x_ref_set {
+	AD469x_2P4_2P75,
+	AD469x_2P75_3P25,
+	AD469x_3P25_3P75,
+	AD469x_3P75_4P5,
+	AD469x_4P5_5P1,
+};
+
+/**
+ * @enum ad469x_ain_high_z
+ * @brief Analog input high impedance mode
+ */
+enum ad469x_ain_high_z {
+	AD469x_AIN_HIGH_Z_DISABLE,
+	AD469x_AIN_HIGH_Z_ENABLE,
 };
 
 /**
@@ -274,6 +296,12 @@ struct ad469x_init_param {
 	enum ad469x_osr_ratios adv_seq_osr_resol[AD469x_CHANNEL_NO];
 	/** Invalidate the Data cache for the given address range */
 	void (*dcache_invalidate_range)(uint32_t address, uint32_t bytes_count);
+	/** Number of data channels to enable */
+	uint8_t num_data_ch;
+	/** Temperature enabled for standard and advanced sequencer if set. */
+	bool temp_enabled;
+	/** enable extended init */
+	bool enable_extended_init;
 };
 
 /**
@@ -323,6 +351,8 @@ struct ad469x_dev {
 	bool temp_enabled;
 	/** Number of active channel slots, for advanced sequencer */
 	uint8_t num_slots;
+	/** Number of data channels to enable */
+	uint8_t num_data_ch;
 };
 
 /******************************************************************************/
@@ -359,7 +389,7 @@ int32_t ad469x_read_data(struct ad469x_dev *dev,
 /* Read from device when converter has the channel sequencer activated */
 int32_t ad469x_seq_read_data(struct ad469x_dev *dev,
 			     uint32_t *buf,
-			     uint16_t samples);
+			     uint32_t samples);
 
 /* Set channel sequence */
 int32_t ad469x_set_channel_sequence(struct ad469x_dev *dev,
@@ -396,6 +426,10 @@ int32_t ad469x_std_seq_osr(struct ad469x_dev *dev,
 int32_t ad469x_std_pin_pairing(struct ad469x_dev *dev,
 			       enum ad469x_pin_pairing pin_pair);
 
+/* Configure the busy indicator to the output on specified pin */
+int32_t ad469x_set_busy(struct ad469x_dev *dev,
+			enum ad469x_busy_gp_sel gp_sel);
+
 /* Enter conversion mode */
 int32_t ad469x_enter_conversion_mode(struct ad469x_dev *dev);
 
@@ -408,6 +442,32 @@ int32_t ad469x_reset_dev(struct ad469x_dev *dev);
 /* Configures the AD469x device */
 int32_t ad469x_config(struct ad469x_dev *dev,
 		      struct ad469x_init_param *config_desc);
+
+/* Get Reference */
+int32_t ad469x_get_reference(struct ad469x_dev *device,
+			     enum ad469x_ref_set *ref_set);
+
+/* Set reference */
+int32_t ad469x_set_reference(struct ad469x_dev *device,
+			     enum ad469x_ref_set ref_set);
+
+/* Configure analog input high Z mode */
+int32_t ad469x_configure_ain_high_z(struct ad469x_dev *dev,
+				    uint8_t ch,
+				    enum ad469x_ain_high_z status);
+
+/* Get the status of analog input high Z mode */
+int32_t ad469x_get_ain_high_z_status(struct ad469x_dev *dev,
+				     uint8_t ch,
+				     enum ad469x_ain_high_z *status);
+
+/* Get the number of channels that are enabled */
+int32_t ad469x_get_num_channels(struct ad469x_dev *dev,
+				uint8_t *num_channels);
+
+/* check if channel is a temperature channel */
+bool ad469x_is_temp_channel(struct ad469x_dev *dev,
+			    uint8_t channel);
 
 /* Initialize the device. */
 int32_t ad469x_init(struct ad469x_dev **device,

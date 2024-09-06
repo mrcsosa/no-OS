@@ -1,20 +1,20 @@
-ifeq (y,$(strip $(DUMMY_EXAMPLE)))
-CFLAGS += -DDUMMY_EXAMPLE=1
-SRCS += $(PROJECT)/src/examples/dummy/dummy_example.c
-INCS += $(PROJECT)/src/examples/dummy/dummy_example.h
+ifeq (y,$(strip $(BASIC_EXAMPLE)))
+CFLAGS += -DBASIC_EXAMPLE
+SRCS += $(PROJECT)/src/examples/basic/basic_example.c
+INCS += $(PROJECT)/src/examples/basic/basic_example.h
 endif
 
 ifeq (y,$(strip $(IIO_TRIGGER_EXAMPLE)))
-TINYIIOD=y
-CFLAGS += -DIIO_TRIGGER_EXAMPLE=1
+IIOD=y
+CFLAGS += -DIIO_TRIGGER_EXAMPLE
 SRCS += $(PROJECT)/src/examples/iio_trigger_example/iio_trigger_example.c
 INCS += $(PROJECT)/src/examples/iio_trigger_example/iio_trigger_example.h
 endif
 
-ifeq (y,$(strip $(TINYIIOD)))
+ifeq (y,$(strip $(IIOD)))
 SRC_DIRS += $(NO-OS)/iio/iio_app
 
-INCS += $(DRIVERS)/imu/iio_adis.h \
+INCS += $(DRIVERS)/imu/iio_adis_internals.h \
 	$(DRIVERS)/imu/iio_adis1657x.h
 SRCS += $(DRIVERS)/imu/iio_adis.c \
 	$(DRIVERS)/imu/iio_adis1657x.c

@@ -1,4 +1,4 @@
-TINYIIOD ?= n
+IIOD ?= y
 include ../../tools/scripts/generic_variables.mk
 
 include src.mk

@@ -7,21 +7,19 @@ PROJECT_BUILD = $(BUILD_DIR)
 
 # Mbed-OS related paths and files
 MBED_OS_DIRECTORY = $(NO-OS)/libraries/mbed
-MBED_OS_BUILD_DIRECTORY = $(MBED_OS_DIRECTORY)/BUILD/$(TARGET_BOARD)/$(COMPILER)
+MBED_OS_BUILD_DIRECTORY = $(BUILD_DIR)/BUILD/$(TARGET_BOARD)/$(COMPILER)
 MBED_OS_LIBRARY = $(MBED_OS_BUILD_DIRECTORY)/libmbed-os.a
 MBED_APP_JSON_DIRECTORY = $(MBED_OS_DIRECTORY)/mbed-app-json
 
 # Finding linker-script in Mbed-OS build directory
 LINKER_SCRIPT_BEFORE_PREPROCESSING = $(sort $(call rwildcard,$(MBED_OS_BUILD_DIRECTORY),*.ld))
 
-PLATFORM_RELATIVE_PATH = $1
-PLATFORM_FULL_PATH = $1
-
 # compiler name and standard libraries
 LIB_FLAGS = -Wl,--start-group -lstdc++ -lsupc++ -lm -lc -lgcc -lnosys  -Wl,--end-group
 CC = arm-none-eabi-gcc
 CPP = arm-none-eabi-g++
 OC = arm-none-eabi-objcopy
+SIZE = arm-none-eabi-size
 
 # Project related build Files
 LSCRIPT = $(BUILD_DIR)/$(PROJECT_NAME)-linker-file.ld
@@ -73,30 +71,36 @@ PLATFORM_INCS = $(MBED_PLATFORM_INCLUDE_PATHS)
 # Extra files for build
 EXTRA_FILES =@$(UPDATED_MBED_GENERATED_ARCHIVE_FILE)
 
+define generate_obj_func
+echo $(1) >> $(UPDATED_MBED_GENERATED_ARCHIVE_FILE)
+endef
+
 # Rule for building Mbed-OS
-$(PROJECT_TARGET): MBED-OS-build
-	-$(MUTE) $(call mk_dir,$(BUILD_DIR)) $(HIDE)
-	$(MUTE) $(call print, putting mbed-os object files names to text file)
-	$(MUTE) $(call ADD_BLANK_LINE_TO_FILE, $(UPDATED_MBED_GENERATED_ARCHIVE_FILE)) $(cmd_separator) $(foreach mbed_os_object_file,$(sort $(UPDATE_MBED_GENERATED_ARCHIVE_FILE)),$(call APPEND_TEXT_TO_FILE,$(mbed_os_object_file),$(UPDATED_MBED_GENERATED_ARCHIVE_FILE)) $(cmd_separator)) echo . $(HIDE)
-	$(MUTE) $(call set_one_time_rule,$@)
+$(PLATFORM)_project: MBED-OS-build
+	-$(call mk_dir,$(BUILD_DIR)) $(HIDE)
+	$(call print, putting mbed-os object files names to text file)
+	echo -n > $(UPDATED_MBED_GENERATED_ARCHIVE_FILE)
+	$(call process_items_in_chunks,$(sort $(UPDATE_MBED_GENERATED_ARCHIVE_FILE)),10,generate_obj_func)
 
 $(MBED_OS_LIBRARY):
-	$(MUTE) $(MAKE) --no-print-directory MBED-OS-build $(HIDE)
+	$(MAKE) --no-print-directory MBED-OS-build $(HIDE)
 
 PHONY_TARGET += MBED-OS-build 
 MBED-OS-build:
-	-$(MUTE) $(call mk_dir,$(MBED_APP_JSON_DIRECTORY)) $(HIDE)
-	$(MUTE) $(call copy_file,$(MBED_OS_DIRECTORY)/mbed_app.json,$(MBED_APP_JSON_DIRECTORY)/) $(HIDE)
-	$(MUTE) cd $(MBED_OS_DIRECTORY) $(cmd_separator) mbed config root . $(cmd_separator) mbed compile --source $(MBED_OS_DIRECTORY)/mbed-os --source $(MBED_APP_JSON_DIRECTORY) -m $(TARGET_BOARD) -t $(COMPILER) --build $(MBED_OS_BUILD_DIRECTORY) --library
-	$(MUTE) $(call print, Mbed-OS build completed)
+	-$(call mk_dir,$(MBED_APP_JSON_DIRECTORY)) $(HIDE)
+	$(call copy_file,$(MBED_OS_DIRECTORY)/mbed_app.json,$(MBED_APP_JSON_DIRECTORY)/) $(HIDE)
+	cd $(MBED_OS_DIRECTORY); mbed config root .; mbed compile --source $(MBED_OS_DIRECTORY)/mbed-os --source $(MBED_APP_JSON_DIRECTORY) -m $(TARGET_BOARD) -t $(COMPILER) --build $(MBED_OS_BUILD_DIRECTORY) --library
+	$(call print, Mbed-OS build completed)
 
 # Linker-Script Preprocessing
 $(LSCRIPT): $(LINKER_SCRIPT_BEFORE_PREPROCESSING)
-	$(MUTE) $(MBED_PREPROCESSOR_FLAGS) $< -o $@
+	$(MBED_PREPROCESSOR_FLAGS) $< -o $@
 
 # Binary file creation from elf file
 $(PROJECT_BIN_FILE):$(BINARY)
-	$(MUTE) $(OC) -O binary $< $@
+	$(OC) -O binary $< $@
 	$(call print,Done $(PROJECT_BIN_FILE))
 
-post_build: $(PROJECT_BIN_FILE)
+$(PLATFORM)_post_build: $(PROJECT_BIN_FILE)
+
+$(PLATFORM)_reset:

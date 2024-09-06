@@ -1,6 +1,6 @@
 /***************************************************************************//**
  *   @file   iio_trigger_example.c
- *   @brief  Implementation of IIO trigger example for eval-adis project.
+ *   @brief  Implementation of IIO trigger example for eval-adis1657x project.
  *   @author RBolboac (ramona.bolboaca@analog.com)
 ********************************************************************************
  * Copyright 2023(c) Analog Devices, Inc.
@@ -52,7 +52,7 @@
 /******************************************************************************/
 /************************ Variable Declarations ******************************/
 /******************************************************************************/
-uint8_t iio_data_buffer[DATA_BUFFER_SIZE*14*sizeof(int)];
+uint8_t iio_data_buffer[DATA_BUFFER_SIZE * 13 * sizeof(int)];
 
 /******************************************************************************/
 /************************ Functions Definitions *******************************/
@@ -70,7 +70,7 @@ int iio_trigger_example_main()
 	struct adis_iio_dev *adis1657x_iio_desc;
 	struct iio_data_buffer data_buff = {
 		.buff = (void *)iio_data_buffer,
-		.size = DATA_BUFFER_SIZE*14*sizeof(int)
+		.size = DATA_BUFFER_SIZE * 13 * sizeof(int)
 	};
 
 	struct iio_hw_trig *adis1657x_trig_desc;
@@ -78,26 +78,27 @@ int iio_trigger_example_main()
 	struct iio_app_desc *app;
 	struct iio_app_init_param app_init_param = { 0 };
 
-	ret = adis1657x_iio_init(&adis1657x_iio_desc, &adis1657x_ip);
-	if (ret)
-		return ret;
-
 	/* Initialize interrupt controller */
 	ret = no_os_irq_ctrl_init(&adis1657x_irq_desc, &adis1657x_gpio_irq_ip);
 	if (ret)
-		goto err_irq_init;
+		goto exit;
 
 	ret = no_os_irq_set_priority(adis1657x_irq_desc, adis1657x_gpio_trig_ip.irq_id,
 				     1);
 	if (ret)
-		goto err_irq_set_prio;
+		goto exit;
 
 	adis1657x_gpio_trig_ip.irq_ctrl = adis1657x_irq_desc;
 
 	/* Initialize hardware trigger */
 	ret = iio_hw_trig_init(&adis1657x_trig_desc, &adis1657x_gpio_trig_ip);
 	if (ret)
-		goto err_irq_set_prio;
+		goto exit;
+
+	ret = adis1657x_iio_init(&adis1657x_iio_desc, &adis1657x_ip,
+				 adis1657x_trig_desc);
+	if (ret)
+		goto exit;
 
 	/* List of devices */
 	struct iio_app_device iio_devices[] = {
@@ -124,25 +125,20 @@ int iio_trigger_example_main()
 
 	ret = iio_app_init(&app, app_init_param);
 	if (ret)
-		goto err_iio_app_init;
+		goto exit;
 
-	// update the reference to iio_desc
+	/* Update the reference to iio_desc */
 	adis1657x_trig_desc->iio_desc = app->iio_desc;
 
 	ret = iio_app_run(app);
-	if (ret)
-		goto iio_app_err;
 
-	return 0;
-
-iio_app_err:
 	iio_app_remove(app);
-err_iio_app_init:
-	iio_hw_trig_remove(adis1657x_trig_desc);
-err_irq_set_prio:
-	no_os_irq_ctrl_remove(adis1657x_irq_desc);
-err_irq_init:
+
+exit:
 	adis1657x_iio_remove(adis1657x_iio_desc);
-	pr_info("Error!\n");
+	iio_hw_trig_remove(adis1657x_trig_desc);
+	no_os_irq_ctrl_remove(adis1657x_irq_desc);
+	if (ret)
+		pr_info("Error!\n");
 	return ret;
 }

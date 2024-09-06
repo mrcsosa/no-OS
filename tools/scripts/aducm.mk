@@ -31,8 +31,6 @@ CCES_EXE = $(CCES_HOME)/Eclipse
 
 export PATH := $(CCES_EXE):$(OPENOCD_SCRIPTS):$(OPENOCD_BIN):$(COMPILER_BIN):$(PATH)
 
-PLATFORM_RELATIVE_PATH = $1
-PLATFORM_FULL_PATH = $1
 PROJECT_BUILD = $(BUILD_DIR)/app
 
 #------------------------------------------------------------------------------
@@ -121,6 +119,7 @@ LDFLAGS	= -Wl,--gc-sections -mcpu=cortex-m3 -mthumb -lm
 CC = arm-none-eabi-gcc
 AS = arm-none-eabi-gcc
 AR = arm-none-eabi-ar
+SIZE = arm-none-eabi-size
 
 HEX = $(basename $(BINARY)).hex
 
@@ -128,18 +127,18 @@ HEX = $(basename $(BINARY)).hex
 #                                 RULES                              
 #------------------------------------------------------------------------------
 
-post_build: $(HEX)
+$(PLATFORM)_post_build: $(HEX)
 
 $(HEX): $(BINARY)
-	$(MUTE) $(call print,[HEX] $(notdir $@))
-	$(MUTE) arm-none-eabi-objcopy -O ihex $(BINARY) $(HEX)
-	$(MUTE) $(call print,$(notdir $@) is ready)
+	$(call print,[HEX] $(notdir $@))
+	arm-none-eabi-objcopy -O ihex $(BINARY) $(HEX)
+	$(call print,$(notdir $@) is ready)
 
 clean: clean_hex
 
 clean_hex:
 	@$(call print,[Delete] $(HEX))
-	$(MUTE) $(call remove_file,$(HEX)) $(HIDE)
+	$(call remove_file,$(HEX)) $(HIDE)
 
 ifneq ($(wildcard $(BUILD_DIR)),)
 all: $(PIN_MUX)
@@ -148,7 +147,7 @@ endif
 #Used to update pinmux if updated on project
 $(PIN_MUX): $(PROJECT_PIN_MUX)
 	$(call print,Updating pinmux)
-	$(MUTE) $(call copy_file,$(PROJECT_PIN_MUX),$(PIN_MUX)) $(HIDE)
+	$(call copy_file,$(PROJECT_PIN_MUX),$(PIN_MUX)) $(HIDE)
 
 # Upload binary to target
 PHONY += aducm3029_run
@@ -157,7 +156,7 @@ aducm3029_run: all $(BINARY).id
 else
 aducm3029_run: $(BINARY) $(BINARY).id
 endif
-	$(MUTE) openocd -s "$(OPENOCD_SCRIPTS)" -f $(BINARY).id \
+	openocd -s "$(OPENOCD_SCRIPTS)" -f $(BINARY).id \
 		-s "$(ADUCM_DFP)/openocd/scripts" -f target/aducm3029.cfg \
 		-c "program  $(BINARY) verify reset exit" $(HIDE)
 
@@ -194,7 +193,7 @@ $(PLATFORM)_sdkopen:
 #CCESS bug: https://labrea.ad.analog.com/browse/CCES-22274
 PHONY += project_run
 project_run: build_project
-	$(MUTE) openocd -s "$(OPENOCD_SCRIPTS)" -f interface/cmsis-dap.cfg \
+	openocd -s "$(OPENOCD_SCRIPTS)" -f interface/cmsis-dap.cfg \
 		-s "$(ADUCM_DFP)/openocd/scripts" -f target/aducm3029.cfg \
 	-c init \
 	-c "program  $(PROJECT_BINARY) verify" \
@@ -214,7 +213,7 @@ project_run: build_project
 PHONY += $(PLATFORM)_sdkbuild
 $(PLATFORM)_sdkbuild: $(LIB_TARGETS)
 	$(call print,[Build] using CCES)
-	$(MUTE) $(CCES) -nosplash -application com.analog.crosscore.headlesstools \
+	$(CCES) -nosplash -application com.analog.crosscore.headlesstools \
 		-data $(WORKSPACE) \
 		-project $(CCES_PROJ_NAME) \
 		-build Release $(HIDE)
@@ -233,9 +232,9 @@ INCLUDE_FLAGS = $(addprefix -append-switch compiler -I='$${ProjDirPath}/,$(addsu
 endif
 
 #Create new project with platform driver and utils source folders linked
-$(PROJECT_TARGET):
+$(PLATFORM)_project:
 	$(call print,Creating IDE project)
-	$(MUTE) $(CCES) -nosplash -application com.analog.crosscore.headlesstools \
+	$(CCES) -nosplash -application com.analog.crosscore.headlesstools \
 		-command projectcreate \
 		-data $(WORKSPACE) \
 		-project $(PROJECT_BUILD) \
@@ -248,9 +247,9 @@ $(PROJECT_TARGET):
 		-remove-switch linker -specs=rdimon.specs $(HIDE)
 	$(call print,Configuring project)
 #Overwrite system.rteconfig file with one that enables all DFP feautres neede by noos
-	$(MUTE) $(call copy_file,$(PLATFORM_TOOLS)/system.rteconfig,$(PROJECT_BUILD)/system.rteconfig) $(HIDE)
+	$(call copy_file,$(PLATFORM_TOOLS)/system.rteconfig,$(PROJECT_BUILD)/system.rteconfig) $(HIDE)
 #Adding pinmux plugin (Did not work to add it in the first command) and update project
-	$(MUTE) $(CCES) -nosplash -application com.analog.crosscore.headlesstools \
+	$(CCES) -nosplash -application com.analog.crosscore.headlesstools \
  		-command addaddin \
  		-data $(WORKSPACE) \
  		-project $(CCES_PROJ_NAME) \
@@ -264,20 +263,21 @@ $(PROJECT_TARGET):
 #The default startup_ADuCM3029.c has compiling errors
 #TODO Replace with patch if team thinks it is a better approach to install a windows
 #program for patching	
-	$(MUTE) $(call copy_file\
+	$(call copy_file\
 	,$(PLATFORM_TOOLS)/startup_ADuCM3029_patch.c,$(PROJECT_BUILD)/RTE/Device/ADuCM3029/startup_ADuCM3029.c) $(HIDE)
 #Remove default files from projectsrc
-	$(MUTE) $(call remove_dir_action,$(PROJECT_BUILD)/src) $(HIDE)
-	$(MUTE) $(call set_one_time_rule,$@)
+	$(call remove_dir_action,$(PROJECT_BUILD)/src) $(HIDE)
 
 copy_pinmux:
-	$(MUTE) $(call copy_file,$(PIN_MUX),$(PROJECT_PIN_MUX)) $(HIDE)
+	$(call copy_file,$(PIN_MUX),$(PROJECT_PIN_MUX)) $(HIDE)
 
 update: copy_pinmux
 
+$(PLATFORM)_reset:
+
 PHONY += clean_project
 clean_project:
-	$(MUTE) $(call remove_dir,$(PROJECT_BUILD)/Release) $(HIDE)
+	$(call remove_dir,$(PROJECT_BUILD)/Release) $(HIDE)
 #OR	
 #	$(CCES) -nosplash -application com.analog.crosscore.headlesstools \
  		-data $(WORKSPACE) \
@@ -287,7 +287,7 @@ clean_project:
 PHONY += $(PLATFORM)_sdkclean
 $(PLATFORM)_sdkclean:
 	$(call print,[Delete] SDK artefacts from $(BUILD_DIR))
-	$(MUTE) $(CCES) -nosplash -application com.analog.crosscore.headlesstools \
+	$(CCES) -nosplash -application com.analog.crosscore.headlesstools \
 		-data $(WORKSPACE) \
 		-project $(CCES_PROJ_NAME) \
 		-cleanOnly all $(HIDE)

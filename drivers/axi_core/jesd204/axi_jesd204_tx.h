@@ -45,6 +45,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "jesd204.h"
+#include "no_os_clk.h"
 
 /******************************************************************************/
 /*************************** Types Declarations *******************************/
@@ -91,7 +92,9 @@ struct axi_jesd204_tx {
 	uint32_t lane_clk_khz;
 	/** Selected Encoder */
 	enum jesd204_encoder encoder;
-
+	/** Lane Clock */
+	struct no_os_clk_desc *lane_clk;
+	/** JESD204 FSM device */
 	struct jesd204_dev *jdev;
 };
 
@@ -124,6 +127,8 @@ struct jesd204_tx_init {
 	uint32_t device_clk_khz;
 	/** Lane Clock in KHz */
 	uint32_t lane_clk_khz;
+	/** Lane Clock */
+	struct no_os_clk_desc *lane_clk;
 };
 
 /******************************************************************************/
@@ -136,11 +141,11 @@ int32_t axi_jesd204_tx_lane_clk_disable(struct axi_jesd204_tx *jesd);
 /** JESD204 TX Status Read */
 uint32_t axi_jesd204_tx_status_read(struct axi_jesd204_tx *jesd);
 /** Device initialization */
+int32_t axi_jesd204_tx_init_legacy(struct axi_jesd204_tx **jesd204,
+				   const struct jesd204_tx_init *init);
+/** Device initialization, JED FSM ON */
 int32_t axi_jesd204_tx_init(struct axi_jesd204_tx **jesd204,
 			    const struct jesd204_tx_init *init);
-/** Device initialization, JED FSM ON */
-int32_t axi_jesd204_tx_init_jesd_fsm(struct axi_jesd204_tx **jesd204,
-				     const struct jesd204_tx_init *init);
 /** Resources Deallocation */
 int32_t axi_jesd204_tx_remove(struct axi_jesd204_tx *jesd);
 #endif

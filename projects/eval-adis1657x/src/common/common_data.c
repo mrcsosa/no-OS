@@ -1,6 +1,6 @@
 /***************************************************************************//**
  *   @file   common_data.c
- *   @brief  Defines common data to be used by eval-adis examples.
+ *   @brief  Defines common data to be used by eval-adis1657x examples.
  *   @author RBolboac (ramona.bolboaca@analog.com)
 ********************************************************************************
  * Copyright 2023(c) Analog Devices, Inc.
@@ -80,6 +80,7 @@ struct no_os_gpio_init_param adis1657x_gpio_reset_ip = {
 };
 
 struct adis_init_param adis1657x_ip = {
+	.info = &adis1657x_chip_info,
 	.gpio_reset = &adis1657x_gpio_reset_ip,
 	.sync_mode = ADIS_SYNC_OUTPUT,
 	.dev_id = ADIS16577_3,

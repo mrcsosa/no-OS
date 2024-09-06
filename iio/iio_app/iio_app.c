@@ -77,8 +77,13 @@
 #include "tcp_socket.h"
 #endif
 
+#ifdef NO_OS_LWIP_NETWORKING
+#include "lwip_socket.h"
+#endif
+
 // The default baudrate iio_app will use to print messages to console.
 #define UART_BAUDRATE_DEFAULT	115200
+#define UART_STOPBITS_DEFAULT	NO_OS_UART_STOP_1_BIT
 
 static inline uint32_t _calc_uart_xfer_time(uint32_t len, uint32_t baudrate)
 {
@@ -87,7 +92,7 @@ static inline uint32_t _calc_uart_xfer_time(uint32_t len, uint32_t baudrate)
 	return ms;
 }
 
-#if !defined(LINUX_PLATFORM) && !defined(NO_OS_NETWORKING)
+#if !defined(LINUX_PLATFORM) && !defined(NO_OS_NETWORKING) && !defined(NO_OS_USB_UART)
 static int32_t iio_print_uart_info_message(struct no_os_uart_desc **uart_desc,
 		struct no_os_uart_init_param *user_uart_params,
 		char *message, int32_t msglen)
@@ -111,7 +116,7 @@ static int32_t iio_print_uart_info_message(struct no_os_uart_desc **uart_desc,
 static int32_t print_uart_hello_message(struct no_os_uart_desc **uart_desc,
 					struct no_os_uart_init_param *user_uart_params)
 {
-#if defined(LINUX_PLATFORM) || defined(NO_OS_NETWORKING)
+#if defined(LINUX_PLATFORM) || defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING) || defined(NO_OS_USB_UART)
 	return 0;
 #else
 	const char *uart_data_size[] = { "5", "6", "7", "8", "9" };
@@ -119,7 +124,7 @@ static int32_t print_uart_hello_message(struct no_os_uart_desc **uart_desc,
 	const char *uart_stop[] = { "1", "2" };
 	char message[512];
 	uint32_t msglen = sprintf(message,
-				  "Running TinyIIOD server...\n"
+				  "Running IIOD server...\n"
 				  "If successful, you may connect an IIO client application by:\n"
 				  "1. Disconnecting the serial terminal you use to view this message.\n"
 				  "2. Connecting the IIO client application using the serial backend configured as shown:\n"
@@ -144,9 +149,9 @@ static int32_t print_uart_error_message(struct no_os_uart_desc **uart_desc,
 {
 	char message[512];
 	uint32_t msglen = sprintf(message,
-				  "TinyIIOD server failed with code %d.\n",
+				  "IIOD server failed with code %d.\n",
 				  (int)status);
-#if defined(LINUX_PLATFORM) || defined(NO_OS_NETWORKING)
+#if defined(LINUX_PLATFORM) || defined(NO_OS_NETWORKING) || defined(NO_OS_LWIP_NETWORKING) || defined(NO_OS_USB_UART)
 	(void)msglen;
 	printf("%s", message);
 	return 0;
@@ -155,6 +160,37 @@ static int32_t print_uart_error_message(struct no_os_uart_desc **uart_desc,
 					   message, msglen);
 #endif
 }
+
+#if defined(NO_OS_LWIP_NETWORKING)
+static int32_t lwip_network_setup(struct iio_app_desc *app,
+				  struct iio_app_init_param param,
+				  struct iio_init_param *iio_init_param)
+{
+	static struct tcp_socket_init_param socket_param;
+	static struct lwip_network_desc lwip_desc;
+	static bool is_initialized = false;
+	int ret;
+
+	if (NO_OS_LWIP_INIT_ONETIME && is_initialized) {
+		socket_param.net = &lwip_desc.no_os_net;
+	} else {
+		ret = no_os_lwip_init(&app->lwip_desc, &param.lwip_param);
+		if (ret)
+			return ret;
+
+		socket_param.net = &app->lwip_desc->no_os_net;
+		memcpy(&lwip_desc, app->lwip_desc, sizeof(lwip_desc));
+	}
+
+	is_initialized = true;
+	socket_param.max_buff_size = 0;
+
+	iio_init_param->phy_type = USE_NETWORK;
+	iio_init_param->tcp_socket_init_param = &socket_param;
+
+	return 0;
+}
+#endif
 
 #if defined(NO_OS_NETWORKING) || defined(LINUX_PLATFORM)
 static int32_t network_setup(struct iio_init_param *iio_init_param,
@@ -186,7 +222,7 @@ static int32_t network_setup(struct iio_init_param *iio_init_param,
 
 	char buff[100];
 	wifi_get_ip(wifi, buff, 100);
-	printf("Tinyiiod ip is: %s\n", buff);
+	printf("iiod ip is: %s\n", buff);
 
 	wifi_get_network_interface(wifi, &socket_param.net);
 #endif
@@ -202,7 +238,7 @@ static int32_t network_setup(struct iio_init_param *iio_init_param,
 static int32_t uart_setup(struct no_os_uart_desc **uart_desc,
 			  struct no_os_uart_init_param *uart_init_par)
 {
-#ifdef LINUX_PLATFORM
+#if defined(LINUX_PLATFORM) || defined(NO_OS_LWIP_NETWORKING)
 	*uart_desc = NULL;
 	return 0;
 #endif
@@ -310,8 +346,11 @@ int iio_app_init(struct iio_app_desc **app,
 		goto error;
 
 	application->uart_desc = uart_desc;
-
-#if defined(NO_OS_NETWORKING) || defined(LINUX_PLATFORM)
+#if defined(NO_OS_LWIP_NETWORKING)
+	status = lwip_network_setup(application, app_init_param, &iio_init_param);
+	if (status)
+		goto error;
+#elif defined(NO_OS_NETWORKING) || defined(LINUX_PLATFORM)
 	status = network_setup(&iio_init_param, uart_desc, application->irq_desc);
 	if(status < 0)
 		goto error;
@@ -423,9 +462,11 @@ int iio_app_remove(struct iio_app_desc *app)
 		return ret;
 #endif
 
-	ret = no_os_uart_remove(app->uart_desc);
-	if (ret)
-		return ret;
+	if (app->uart_desc) {
+		ret = no_os_uart_remove(app->uart_desc);
+		if (ret)
+			return ret;
+	}
 
 	ret = iio_remove(app->iio_desc);
 	if (ret)

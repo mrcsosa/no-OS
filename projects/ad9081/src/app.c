@@ -48,6 +48,7 @@
 #include "no_os_spi.h"
 #include "xilinx_spi.h"
 #include "ad9081.h"
+#include "hmc7044.h"
 #include "app_clock.h"
 #include "app_jesd.h"
 #include "axi_jesd204_rx.h"
@@ -75,6 +76,7 @@ static int16_t adc_buffer[MAX_ADC_BUF_SAMPLES] __attribute__ ((aligned));
 
 extern struct axi_jesd204_rx *rx_jesd;
 extern struct axi_jesd204_tx *tx_jesd;
+extern struct hmc7044_dev* hmc7044_dev;
 
 int main(void)
 {
@@ -124,7 +126,7 @@ int main(void)
 		.dual_link = 0,
 		.version = AD9081_TX_JESD_VERSION,
 		.logical_lane_mapping = AD9081_TX_LOGICAL_LANE_MAPPING,
-		.tpl_phase_adjust = 12
+		.tpl_phase_adjust = AD9081_JRX_TPL_PHASE_ADJUST
 	};
 	struct link_init_param jtx_link_rx = {
 		.device_id = 0,
@@ -151,6 +153,8 @@ int main(void)
 		.jesd_tx_clk = &jesd_clk[1],
 		.jesd_rx_clk = &jesd_clk[0],
 		.sysref_coupling_ac_en = 0,
+		.sysref_cmos_input_enable = 0,
+		.config_sync_0a_cmos_enable = 0,
 		.multidevice_instance_count = 1,
 #ifdef QUAD_MXFE
 		.jesd_sync_pins_01_swap_enable = true,
@@ -159,6 +163,11 @@ int main(void)
 #endif
 		.lmfc_delay_dac_clk_cycles = 0,
 		.nco_sync_ms_extra_lmfc_num = 0,
+		.nco_sync_direct_sysref_mode_enable = 0,
+		.sysref_average_cnt_exp = 7,
+		.continuous_sysref_mode_disable = 0,
+		.tx_disable = false,
+		.rx_disable = false,
 		/* TX */
 		.dac_frequency_hz = AD9081_DAC_FREQUENCY,
 		/* The 4 DAC Main Datapaths */
@@ -169,7 +178,8 @@ int main(void)
 		.tx_channel_interpolation = AD9081_TX_CHAN_INTERPOLATION,
 		.tx_channel_nco_frequency_shift_hz = AD9081_TX_CHAN_NCO_SHIFT,
 		.tx_channel_gain = AD9081_TX_CHAN_GAIN,
-		.jrx_link_tx = &jrx_link_tx,
+		.jrx_link_tx[0] = &jrx_link_tx,
+		.jrx_link_tx[1] = NULL,
 		/* RX */
 		.adc_frequency_hz = AD9081_ADC_FREQUENCY,
 		.nyquist_zone = AD9081_ADC_NYQUIST_ZONE,
@@ -236,7 +246,7 @@ int main(void)
 		.platform_ops = &xil_gpio_ops,
 		.extra = &xil_gpio_param_2
 	};
-	no_os_gpio_desc *ad9081_gpio0_mux;
+	struct no_os_gpio_desc *ad9081_gpio0_mux;
 
 	status = no_os_gpio_get(&ad9081_gpio0_mux, &ad9081_gpio0_mux_init);
 	if (status)
@@ -272,20 +282,77 @@ int main(void)
 		rx_adc_init.num_channels += phy[i]->jtx_link_rx[0].jesd_param.jesd_m +
 					    phy[i]->jtx_link_rx[1].jesd_param.jesd_m;
 
-		tx_dac_init.num_channels += phy[i]->jrx_link_tx.jesd_param.jesd_m *
-					    (phy[i]->jrx_link_tx.jesd_param.jesd_duallink > 0 ? 2 : 1);
+		tx_dac_init.num_channels += phy[i]->jrx_link_tx[0].jesd_param.jesd_m *
+					    (phy[i]->jrx_link_tx[0].jesd_param.jesd_duallink > 0 ? 2 : 1);
 	}
 
 	axi_jesd204_rx_watchdog(rx_jesd);
-
-	axi_jesd204_tx_status_read(tx_jesd);
-	axi_jesd204_rx_status_read(rx_jesd);
 
 	axi_dac_init(&tx_dac, &tx_dac_init);
 	axi_adc_init(&rx_adc, &rx_adc_init);
 
 	axi_dmac_init(&tx_dmac, &tx_dmac_init);
 	axi_dmac_init(&rx_dmac, &rx_dmac_init);
+
+	struct jesd204_topology *topology;
+	struct jesd204_topology_dev devs[] = {
+		{
+			.jdev = hmc7044_dev->jdev,
+			.link_ids = {FRAMER_LINK0_RX, DEFRAMER_LINK0_TX},
+			.links_number = 2,
+			.is_sysref_provider = true,
+		},
+		{
+			.jdev = rx_jesd->jdev,
+			.link_ids = {FRAMER_LINK0_RX},
+			.links_number = 1,
+		},
+		{
+			.jdev = tx_jesd->jdev,
+			.link_ids = {DEFRAMER_LINK0_TX},
+			.links_number = 1,
+		},
+#if MULTIDEVICE_INSTANCE_COUNT == 4
+		{
+			.jdev = phy[0]->jdev,
+			.link_ids = {FRAMER_LINK0_RX, DEFRAMER_LINK0_TX},
+			.links_number = 2,
+		},
+		{
+			.jdev = phy[1]->jdev,
+			.link_ids = {FRAMER_LINK0_RX, DEFRAMER_LINK0_TX},
+			.links_number = 2,
+		},
+		{
+			.jdev = phy[2]->jdev,
+			.link_ids = {FRAMER_LINK0_RX, DEFRAMER_LINK0_TX},
+			.links_number = 2,
+		},
+		{
+			.jdev = phy[3]->jdev,
+			.link_ids = {FRAMER_LINK0_RX, DEFRAMER_LINK0_TX},
+			.links_number = 2,
+			.is_top_device = true,
+		},
+#else
+		{
+			.jdev = phy[0]->jdev,
+			.link_ids = {FRAMER_LINK0_RX, DEFRAMER_LINK0_TX},
+			.links_number = 2,
+			.is_top_device = true,
+		},
+#endif
+	};
+
+	jesd204_topology_init(&topology, devs,
+			      sizeof(devs)/sizeof(*devs));
+
+	jesd204_fsm_start(topology, JESD204_LINKS_ALL);
+
+	axi_jesd204_tx_status_read(tx_jesd);
+	axi_jesd204_rx_status_read(rx_jesd);
+
+	no_os_mdelay(10);
 
 #ifdef IIO_SUPPORT
 

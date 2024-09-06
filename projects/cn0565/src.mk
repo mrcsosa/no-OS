@@ -13,7 +13,9 @@ INCS +=	$(INCLUDE)/no_os_uart.h \
 	$(INCLUDE)/no_os_irq.h \
 	$(INCLUDE)/no_os_rtc.h \
 	$(INCLUDE)/no_os_gpio.h \
-	$(INCLUDE)/no_os_alloc.h
+	$(INCLUDE)/no_os_alloc.h \
+	$(INCLUDE)/no_os_mutex.h \
+	$(INCLUDE)/no_os_dma.h \
 
 SRCS += $(DRIVERS)/api/no_os_spi.c \
 	$(DRIVERS)/api/no_os_gpio.c \
@@ -21,10 +23,12 @@ SRCS += $(DRIVERS)/api/no_os_spi.c \
 	$(DRIVERS)/api/no_os_i2c.c \
 	$(DRIVERS)/api/no_os_irq.c \
 	$(DRIVERS)/api/no_os_uart.c \
+	$(DRIVERS)/api/no_os_dma.c \
 	$(NO-OS)/util/no_os_lf256fifo.c \
 	$(NO-OS)/util/no_os_list.c \
 	$(NO-OS)/util/no_os_util.c \
 	$(NO-OS)/util/no_os_alloc.c \
+	$(NO-OS)/util/no_os_mutex.c \
 	$(DRIVERS)/afe/ad5940/bia_measurement.c \
 	$(DRIVERS)/afe/ad5940/ad5940.c
 
@@ -35,6 +39,7 @@ ifeq (stm32,$(strip $(PLATFORM)))
 SRCS += $(PLATFORM_DRIVERS)/stm32_delay.c \
 	$(PLATFORM_DRIVERS)/stm32_gpio.c \
 	$(PLATFORM_DRIVERS)/stm32_spi.c \
+	$(PLATFORM_DRIVERS)/stm32_dma.c  \
 	$(PLATFORM_DRIVERS)/stm32_i2c.c \
 	$(PLATFORM_DRIVERS)/stm32_irq.c \
 	$(PLATFORM_DRIVERS)/stm32_gpio_irq.c \
@@ -47,6 +52,7 @@ INCS +=	$(INCLUDE)/no_os_delay.h \
 	$(PLATFORM_DRIVERS)/stm32_irq.h \
 	$(PLATFORM_DRIVERS)/stm32_gpio_irq.h \
 	$(PLATFORM_DRIVERS)/stm32_spi.h \
+	$(PLATFORM_DRIVERS)/stm32_dma.h  \
 	$(PLATFORM_DRIVERS)/stm32_i2c.h \
 	$(PLATFORM_DRIVERS)/stm32_gpio.h \
 	$(PLATFORM_DRIVERS)/stm32_hal.h
@@ -80,7 +86,7 @@ INCS +=	$(INCLUDE)/no_os_delay.h \
 	$(PLATFORM_DRIVERS)/platform_init.h
 endif
 
-ifeq (y,$(strip $(TINYIIOD)))
+ifeq (y,$(strip $(IIOD)))
 LIBRARIES += iio
 SRC_DIRS += $(NO-OS)/iio/iio_app
 SRCS += $(DRIVERS)/afe/ad5940/iio_ad5940.c \

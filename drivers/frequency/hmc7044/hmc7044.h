@@ -58,6 +58,7 @@ struct hmc7044_chan_spec {
 	bool		dynamic_driver_enable;
 	bool		output_control0_rb4_enable;
 	bool		force_mute_enable;
+	bool		is_sysref;
 	unsigned int	divider;
 	unsigned int	driver_mode;
 	unsigned int	driver_impedance;
@@ -68,15 +69,20 @@ struct hmc7044_chan_spec {
 
 struct hmc7044_dev {
 	struct no_os_spi_desc	*spi_desc;
+	/* CLK descriptors */
+	struct no_os_clk_desc	**clk_desc;
 	bool		is_hmc7043;
 	uint32_t	clkin_freq[4];
 	uint32_t	clkin_freq_ccf[4];
 	uint32_t	vcxo_freq;
 	uint32_t	pll1_pfd;
+	uint32_t	pfd1_limit;
+	uint32_t	pll1_cp_current;
 	uint32_t	pll2_freq;
 	uint32_t	pll1_loop_bw;
 	uint32_t	sysref_timer_div;
 	unsigned int	pll1_ref_prio_ctrl;
+	bool		pll1_ref_autorevert_en;
 	bool		clkin0_rfsync_en;
 	bool		clkin1_vcoin_en;
 	bool		high_performance_mode_clock_dist_en;
@@ -88,23 +94,42 @@ struct hmc7044_dev {
 	uint32_t	gpo_ctrl[4];
 	uint32_t	num_channels;
 	struct hmc7044_chan_spec	*channels;
+	struct jesd204_dev *jdev;
+	uint32_t			jdev_lmfc_lemc_rate;
+	uint32_t			jdev_lmfc_lemc_gcd;
+	uint32_t			jdev_max_sysref_freq;
+	uint32_t			jdev_desired_sysref_freq;
+	bool				jdev_skip_sysref_freq_calc;
+	bool				is_sysref_provider;
+	bool				hmc_two_level_tree_sync_en;
+	bool				read_write_confirmed;
 };
 
 struct hmc7044_init_param {
 	struct no_os_spi_init_param	*spi_init;
+	/* Init CLK channel descriptors */
+	bool		export_no_os_clk;
 	bool		is_hmc7043;
 	uint32_t	clkin_freq[4];
 	uint32_t	clkin_freq_ccf[4];
 	uint32_t	vcxo_freq;
 	uint32_t	pll1_pfd;
+	uint32_t	pfd1_limit;
+	uint32_t	pll1_cp_current;
 	uint32_t	pll2_freq;
 	uint32_t	pll1_loop_bw;
 	uint32_t	sysref_timer_div;
 	unsigned int	pll1_ref_prio_ctrl;
+	bool		pll1_ref_autorevert_en;
 	bool		clkin0_rfsync_en;
 	bool		clkin1_vcoin_en;
 	bool		high_performance_mode_clock_dist_en;
 	bool		rf_reseeder_disable;
+	bool		hmc_two_level_tree_sync_en;
+	bool		jesd204_sysref_provider;
+	uint32_t	jesd204_max_sysref_frequency_hz;
+	uint32_t	jesd204_desired_sysref_frequency_hz;
+	bool		jdev_skip_sysref_freq_calc;
 	unsigned int	sync_pin_mode;
 	uint32_t	pulse_gen_mode;
 	uint32_t	in_buf_mode[5];
@@ -113,6 +138,31 @@ struct hmc7044_init_param {
 	uint32_t	num_channels;
 	struct hmc7044_chan_spec	*channels;
 };
+
+/**
+ * @brief hmc7044 specific CLK platform ops structure
+ */
+extern const struct no_os_clk_platform_ops hmc7044_clk_ops;
+
+/*
+ * adi,pulse-generator-mode
+ */
+#define HMC7044_PULSE_GEN_LEVEL_SENSITIVE	0
+#define HMC7044_PULSE_GEN_1_PULSE		1
+#define HMC7044_PULSE_GEN_2_PULSE		2
+#define HMC7044_PULSE_GEN_4_PULSE		3
+#define HMC7044_PULSE_GEN_8_PULSE		4
+#define HMC7044_PULSE_GEN_16_PULSE		5
+#define HMC7044_PULSE_GEN_CONT_PULSE		7
+
+/*
+ * adi,sync-pin-mode
+ */
+
+#define HMC7044_SYNC_PIN_DISABLED		        0
+#define HMC7044_SYNC_PIN_SYNC   		        1
+#define HMC7044_SYNC_PIN_PULSE_GEN_REQ	        2
+#define HMC7044_SYNC_PIN_SYNC_THEN_PULSE_GEN	3
 
 /******************************************************************************/
 /************************ Functions Declarations ******************************/

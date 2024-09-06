@@ -53,6 +53,7 @@
 #include "no_os_alloc.h"
 
 struct ad7606_chip_info {
+	const char *name;
 	uint8_t num_channels;
 	uint8_t bits;
 	uint8_t max_dout_lines;
@@ -114,6 +115,7 @@ static const struct ad7606_range ad7606c_range_table[] = {
 
 static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 	[ID_AD7605_4] = {
+		.name = "AD7605-4",
 		.num_channels = 4,
 		.bits = 16,
 		.max_dout_lines = AD7606_2_DOUT,
@@ -122,6 +124,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.hw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606_range_table),
 	},
 	[ID_AD7606_4] = {
+		.name = "AD7606-4",
 		.num_channels = 4,
 		.bits = 16,
 		.max_dout_lines = AD7606_2_DOUT,
@@ -130,6 +133,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.hw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606_range_table),
 	},
 	[ID_AD7606_6] = {
+		.name = "AD7606-6",
 		.num_channels = 6,
 		.bits = 16,
 		.max_dout_lines = AD7606_2_DOUT,
@@ -138,6 +142,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.hw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606_range_table),
 	},
 	[ID_AD7606_8] = {
+		.name = "AD7606-8",
 		.num_channels = 8,
 		.bits = 16,
 		.max_dout_lines = AD7606_2_DOUT,
@@ -146,6 +151,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.hw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606_range_table),
 	},
 	[ID_AD7606B] = {
+		.name = "AD7606B",
 		.num_channels = 8,
 		.bits = 16,
 		.max_dout_lines = AD7606_4_DOUT,
@@ -158,6 +164,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.sw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606b_range_table),
 	},
 	[ID_AD7606C_16] = {
+		.name = "AD7606C-16",
 		.num_channels = 8,
 		.bits = 16,
 		.max_dout_lines = AD7606_8_DOUT,
@@ -170,6 +177,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.sw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606c_range_table),
 	},
 	[ID_AD7606C_18] = {
+		.name = "AD7606C-18",
 		.num_channels = 8,
 		.bits = 18,
 		.max_dout_lines = AD7606_8_DOUT,
@@ -182,6 +190,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.sw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606c_range_table),
 	},
 	[ID_AD7608] = {
+		.name = "AD7608",
 		.num_channels = 8,
 		.bits = 18,
 		.max_dout_lines = AD7606_2_DOUT,
@@ -190,6 +199,7 @@ static const struct ad7606_chip_info ad7606_chip_info_tbl[] = {
 		.hw_range_table_sz = NO_OS_ARRAY_SIZE(ad7606_range_table),
 	},
 	[ID_AD7609] = {
+		.name = "AD7609",
 		.num_channels = 8,
 		.bits = 18,
 		.max_dout_lines = AD7606_2_DOUT,
@@ -211,6 +221,71 @@ static const uint16_t tconv_max[] = {
 	324	/* AD7606_OSR_256 */
 };
 
+/**
+ * @struct ad7606_axi_dev
+ * @brief Structure for AXI FPGA cores
+ */
+struct ad7606_axi_dev {
+	/* Clock gen for hdl design structure */
+	struct axi_clkgen *clkgen;
+	/* Trigger conversion PWM generator descriptor */
+	struct no_os_pwm_desc *trigger_pwm_desc;
+};
+
+/**
+ * @struct ad7606_dev
+ * @brief Device driver structure
+ */
+struct ad7606_dev {
+	/** AXI core device data */
+	struct ad7606_axi_dev axi_dev;
+	/** SPI descriptor*/
+	struct no_os_spi_desc *spi_desc;
+	/** RESET GPIO descriptor */
+	struct no_os_gpio_desc *gpio_reset;
+	/** CONVST GPIO descriptor */
+	struct no_os_gpio_desc *gpio_convst;
+	/** BUSY GPIO descriptor */
+	struct no_os_gpio_desc *gpio_busy;
+	/** STBYn GPIO descriptor */
+	struct no_os_gpio_desc *gpio_stby_n;
+	/** RANGE GPIO descriptor */
+	struct no_os_gpio_desc *gpio_range;
+	/** OS0 GPIO descriptor */
+	struct no_os_gpio_desc *gpio_os0;
+	/** OS1 GPIO descriptor */
+	struct no_os_gpio_desc *gpio_os1;
+	/** OS2 GPIO descriptor */
+	struct no_os_gpio_desc *gpio_os2;
+	/** PARn/SER GPIO descriptor */
+	struct no_os_gpio_desc *gpio_par_ser;
+	/** Device ID */
+	enum ad7606_device_id device_id;
+	/** Oversampling settings */
+	struct ad7606_oversampling oversampling;
+	/** Whether the device is running in hardware or software mode */
+	bool sw_mode;
+	/** Whether the device is running in register or ADC reading mode */
+	bool reg_mode;
+	/** Number of DOUT lines supported by the device */
+	enum ad7606_dout_format max_dout_lines;
+	/** Configuration register settings */
+	struct ad7606_config config;
+	/** Digital diagnostics register settings */
+	struct ad7606_digital_diag digital_diag_enable;
+	/** Number of input channels of the device */
+	uint8_t num_channels;
+	/** Channel offset calibration */
+	int8_t offset_ch[AD7606_MAX_CHANNELS];
+	/** Channel phase calibration */
+	uint8_t phase_ch[AD7606_MAX_CHANNELS];
+	/** Channel gain calibration */
+	uint8_t gain_ch[AD7606_MAX_CHANNELS];
+	/** Channel operating range */
+	struct ad7606_range range_ch[AD7606_MAX_CHANNELS];
+	/** Data buffer (used internally by the SPI communication functions) */
+	uint8_t data[28];
+};
 
 /***************************************************************************//**
  * @brief Read a device register via SPI.
@@ -526,7 +601,8 @@ int32_t ad7606_spi_data_read(struct ad7606_dev *dev, uint32_t *data)
 }
 
 /***************************************************************************//**
- * @brief Blocking conversion start and data read.
+ * @brief Blocking conversion start and read data (for a single sample from all
+ *        channels).
  *
  * This function performs a conversion start and then proceeds to reading
  * the conversion data.
@@ -540,7 +616,7 @@ int32_t ad7606_spi_data_read(struct ad7606_dev *dev, uint32_t *data)
  *                  -EBADMSG - CRC computation mismatch.
  *                  0 - No errors encountered.
 *******************************************************************************/
-int32_t ad7606_read(struct ad7606_dev *dev, uint32_t * data)
+static int32_t ad7606_read_one_sample(struct ad7606_dev *dev, uint32_t * data)
 {
 	int32_t ret;
 	uint8_t busy;
@@ -572,6 +648,41 @@ int32_t ad7606_read(struct ad7606_dev *dev, uint32_t * data)
 	}
 
 	return ad7606_spi_data_read(dev, data);
+}
+
+/***************************************************************************//**
+ * @brief Read muliple raw samples from device.
+ *
+ * This function performs a series of conversion starts and then proceeds to
+ * reading the conversion data (after each conversion).
+ *
+ * @param dev        - The device structure.
+ * @param data       - Pointer to location of buffer where to store the data.
+ * @param samples    - Number of samples to pull from the ADC.
+ *
+ * @return ret - return code.
+ *         Example: -EIO - SPI communication error.
+ *                  -ETIME - Timeout while waiting for the BUSY signal.
+ *                  -EBADMSG - CRC computation mismatch.
+ *                  0 - No errors encountered.
+*******************************************************************************/
+int32_t ad7606_read_samples(struct ad7606_dev *dev, uint32_t * data,
+			    uint32_t samples)
+{
+	uint32_t nchannels = ad7606_chip_info_tbl[dev->device_id].num_channels;
+	uint32_t i, sample_size;
+	int32_t ret;
+
+	sample_size = nchannels * sizeof(uint32_t);
+
+	for (i = 0; i < samples; i++) {
+		ret = ad7606_read_one_sample(dev, data);
+		if (ret)
+			return ret;
+		data += sample_size;
+	}
+
+	return 0;
 }
 
 /* Internal function to reset device settings to default state after chip reset. */
@@ -1003,10 +1114,6 @@ int32_t ad7606_set_config(struct ad7606_dev *dev,
 	if (dev->sw_mode) {
 
 		val |= no_os_field_prep(AD7606_CONFIG_OPERATION_MODE_MSK, config.op_mode);
-		/* This driver currently supports only normal SPI with 1 DOUT line.
-		 * TODO: remove this check when implementing multi-line DOUT. */
-		if ((uint8_t)config.dout_format > AD7606_1_DOUT)
-			return -EINVAL;
 		if ((uint8_t)config.dout_format > (uint8_t)dev->max_dout_lines)
 			return -EINVAL;
 		val |= no_os_field_prep(AD7606_CONFIG_DOUT_FORMAT_MSK, config.dout_format);
@@ -1092,6 +1199,48 @@ int32_t ad7606_set_digital_diag(struct ad7606_dev *dev,
 }
 
 /***************************************************************************//**
+ * @brief Initialize AXI FPGA modules, if configured
+ *
+ * The device may function in correlation with AXI SPI Engine, AXI ADC,
+ * AXI PWM and other FPGA elements.
+ * When it's configured (with AXI support) this function will initialize
+ * all the AXI elements (provided via init_param).
+ *
+ * @param device     - Pointer to location of device structure to write.
+ * @param init_param - Pointer to configuration of the driver.
+ *
+ * @return ret - return code.
+ *         Example: -ENOMEM - Memory allocation error.
+ *                  0 - No errors encountered.
+*******************************************************************************/
+static int32_t ad7606_axi_init(struct ad7606_dev *device,
+			       struct ad7606_init_param *init_param)
+{
+	struct ad7606_axi_init_param *axi_init = init_param->axi_init;
+	struct ad7606_axi_dev *axi = &device->axi_dev;
+	int32_t ret;
+
+	if (!axi_init)
+		return 0;
+
+	ret = axi_clkgen_init(&axi->clkgen, axi_init->clkgen_init);
+	if (ret != 0)
+		return ret;
+
+	ret = axi_clkgen_set_rate(axi->clkgen, axi_init->axi_clkgen_rate);
+	if (ret != 0)
+		goto error;
+
+	ret = no_os_pwm_init(&axi->trigger_pwm_desc, axi_init->trigger_pwm_init);
+	if (ret != 0)
+		goto error;
+
+	/* Note: more validation will be added later */
+error:
+	return ret;
+}
+
+/***************************************************************************//**
  * @brief Initialize the ad7606 device structure.
  *
  * Performs memory allocation of the device structure.
@@ -1110,6 +1259,7 @@ int32_t ad7606_set_digital_diag(struct ad7606_dev *dev,
 int32_t ad7606_init(struct ad7606_dev **device,
 		    struct ad7606_init_param *init_param)
 {
+	const struct ad7606_chip_info *info;
 	struct ad7606_dev *dev;
 	uint8_t reg, id;
 	int32_t i, ret;
@@ -1122,9 +1272,17 @@ int32_t ad7606_init(struct ad7606_dev **device,
 		return -ENOMEM;
 
 	dev->device_id = init_param->device_id;
-	dev->num_channels = ad7606_chip_info_tbl[dev->device_id].num_channels;
-	dev->max_dout_lines = ad7606_chip_info_tbl[dev->device_id].max_dout_lines;
-	if (ad7606_chip_info_tbl[dev->device_id].has_registers)
+	info = &ad7606_chip_info_tbl[dev->device_id];
+	printf("Initializing device %s, num-channels %u SDI lines %u\n",
+	       info->name, info->num_channels, 1 << info->max_dout_lines);
+
+	ret = ad7606_axi_init(dev, init_param);
+	if (ret != 0)
+		goto error;
+
+	dev->num_channels = info->num_channels;
+	dev->max_dout_lines = info->max_dout_lines;
+	if (info->has_registers)
 		dev->sw_mode = init_param->sw_mode;
 
 	ret = ad7606_request_gpios(dev, init_param);
@@ -1149,6 +1307,11 @@ int32_t ad7606_init(struct ad7606_dev **device,
 	if (ret < 0)
 		goto error;
 
+	/* Copy init parameters here, ad7606_reset() will clear these */
+	memcpy(dev->gain_ch, init_param->gain_ch, sizeof(dev->gain_ch));
+	memcpy(dev->phase_ch, init_param->phase_ch, sizeof(dev->phase_ch));
+	memcpy(dev->offset_ch, init_param->offset_ch, sizeof(dev->offset_ch));
+
 	/* wait DEVICE_SETUP time */
 	no_os_udelay(253);
 
@@ -1161,7 +1324,7 @@ int32_t ad7606_init(struct ad7606_dev **device,
 		if (ret < 0)
 			goto error;
 
-		id = ad7606_chip_info_tbl[dev->device_id].device_id;
+		id = info->device_id;
 		if (no_os_field_get(AD7606_ID_DEVICE_ID_MSK, reg) != id) {
 			printf("ad7606: device id mismatch, expected 0x%.2x, got 0x%.2x\n",
 			       id,
@@ -1211,7 +1374,7 @@ int32_t ad7606_init(struct ad7606_dev **device,
 	if (ret < 0)
 		goto error;
 
-	if (ad7606_chip_info_tbl[dev->device_id].has_oversampling)
+	if (info->has_oversampling)
 		ad7606_set_oversampling(dev, init_param->oversampling);
 
 	*device = dev;
@@ -1223,6 +1386,28 @@ error:
 	printf("ad7606 initialization failed\n");
 	ad7606_remove(dev);
 	return ret;
+}
+
+/***************************************************************************//**
+ * @brief Free any resource used by the driver.
+ *
+ * @param dev        - The device structure.
+ *
+ * @return ret - return code.
+ *         Example: -EIO - SPI communication error.
+ *                  0 - No errors encountered.
+*******************************************************************************/
+void ad7606_axi_remove(struct ad7606_dev *dev)
+{
+	struct ad7606_axi_dev *axi;
+
+	if (!dev)
+		return;
+
+	axi = &dev->axi_dev;
+
+	no_os_pwm_remove(axi->trigger_pwm_desc);
+	axi_clkgen_remove(axi->clkgen);
 }
 
 /***************************************************************************//**
@@ -1249,6 +1434,8 @@ int32_t ad7606_remove(struct ad7606_dev *dev)
 	no_os_gpio_remove(dev->gpio_par_ser);
 
 	ret = no_os_spi_remove(dev->spi_desc);
+
+	ad7606_axi_remove(dev);
 
 	no_os_free(dev);
 

@@ -285,9 +285,12 @@ static int32_t axi_dmac_detect_caps(struct axi_dmac *dmac)
 	uint32_t reg_val, initial_reg_val = 0;
 	uint32_t src_mem_mapped = 0;
 	uint32_t dest_mem_mapped = 0;
+	uint32_t intf_desc = 0;
 
 	dmac->max_length = -1;
 	dmac->direction = INVALID_DIR;
+	dmac->width_dst = -1;
+	dmac->width_src = -1;
 
 	/* Check if HW cyclic possible */
 	axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS, &initial_reg_val);
@@ -307,6 +310,11 @@ static int32_t axi_dmac_detect_caps(struct axi_dmac *dmac)
 	axi_dmac_read(dmac, AXI_DMAC_REG_DEST_ADDRESS, &dest_mem_mapped);
 	axi_dmac_write(dmac, AXI_DMAC_REG_SRC_ADDRESS, 0xffffffff);
 	axi_dmac_read(dmac, AXI_DMAC_REG_SRC_ADDRESS, &src_mem_mapped);
+	axi_dmac_read(dmac, AXI_DMAC_REG_INTF_DESC, &intf_desc);
+	dmac->width_dst = no_os_field_get(AXI_DMAC_DMA_BPB_DEST, intf_desc);
+	dmac->width_dst = (1 << dmac->width_dst);
+	dmac->width_src = no_os_field_get(AXI_DMAC_DMA_BPB_SRC, intf_desc);
+	dmac->width_src = (1 << dmac->width_src);
 
 	if (dest_mem_mapped && !src_mem_mapped) {
 		dmac->direction = DMA_DEV_TO_MEM;
@@ -342,13 +350,17 @@ int32_t axi_dmac_init(struct axi_dmac **dmac_core,
 	dmac->base = init->base;
 	dmac->irq_option = init->irq_option;
 
+	int32_t status = axi_dmac_detect_caps(dmac);
+	if (status < 0)
+		goto free;
+
 	*dmac_core = dmac;
 
-	int32_t status = axi_dmac_detect_caps(*dmac_core);
-	if (status < 0)
-		return -1;
-
 	return 0;
+
+free:
+	no_os_free(dmac);
+	return -1;
 }
 
 /*******************************************************************************
@@ -410,19 +422,18 @@ int32_t axi_dmac_transfer_start(struct axi_dmac *dmac,
 		}
 	}
 
-	/* Cyclic transfers set to HW or SW depending on size for MEM to DEV. */
-	if ((dmac->direction == DMA_MEM_TO_DEV) && (dmac->transfer.cyclic == CYCLIC)) {
-		if ((dmac->remaining_size - 1) <= dmac->max_length) {
-			if (dmac->hw_cyclic) {
-				axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS, &reg_val);
-				reg_val = reg_val | DMA_CYCLIC;
-				axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, reg_val);
-			}
-		} else {
-			axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS, &reg_val);
-			reg_val = reg_val & ~DMA_CYCLIC;
-			axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, reg_val);
-		}
+	/* Clear the DMA_CYCLIC flag for all transfers */
+	axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS, &reg_val);
+	reg_val = reg_val & ~DMA_CYCLIC;
+	axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, reg_val);
+
+	/* Cyclic transfers set to HW for MEM to DEV if smaller than maximum transfer size
+	 * and DMA has this feature. */
+	if ((dmac->direction == DMA_MEM_TO_DEV) && (dmac->transfer.cyclic == CYCLIC)
+	    && ((dmac->remaining_size - 1) <= dmac->max_length) && (dmac->hw_cyclic)) {
+		axi_dmac_read(dmac, AXI_DMAC_REG_FLAGS, &reg_val);
+		reg_val = reg_val | DMA_CYCLIC;
+		axi_dmac_write(dmac, AXI_DMAC_REG_FLAGS, reg_val);
 	}
 
 	/* Enable DMA if not already enabled. */
@@ -530,6 +541,7 @@ int32_t axi_dmac_transfer_wait_completion(struct axi_dmac *dmac,
 			}
 			axi_dmac_read(dmac, AXI_DMAC_REG_IRQ_PENDING, &reg_val);
 		}
+		axi_dmac_write(dmac, AXI_DMAC_REG_IRQ_PENDING, reg_val);
 	}
 
 	return 0;

@@ -67,7 +67,7 @@ static const unsigned int ad74413r_debounce_map[AD74413R_DIN_DEBOUNCE_LEN] = {
 };
 
 /** The time required for an ADC conversion by rejection (us) */
-static const uint32_t conv_times_ad74413r[] = { 208, 833, 50000, 100000 };
+static const uint32_t conv_times_ad74413r[] = { 50000, 208, 100000, 833 };
 static const uint32_t conv_times_ad74412r[] = { 50000, 208};
 
 /******************************************************************************/
@@ -134,6 +134,58 @@ static int ad74413r_rejection_to_rate(enum ad74413r_rejection rejection,
 }
 
 /**
+ * @brief Convert the measuring range of the ADC from range enum values to millivolts.
+ * @param range - ADC sample rate
+ * @param val - Rejection register value
+ * @return 0 in case of success, -EINVAL otherwise
+ */
+int ad74413r_range_to_voltage_range(enum ad74413r_adc_range range,
+				    uint32_t *val)
+{
+	switch (range) {
+	case AD74413R_ADC_RANGE_10V:
+		*val = 10000;
+		break;
+	case AD74413R_ADC_RANGE_2P5V_EXT_POW:
+	case AD74413R_ADC_RANGE_2P5V_INT_POW:
+		*val = 2500;
+		break;
+	case AD74413R_ADC_RANGE_5V_BI_DIR:
+		*val = 5000;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * @brief Convert the measuring range of the ADC from range enum values to millivolts.
+ * @param range - ADC sample rate
+ * @param val - Rejection register value
+ * @return 0 in case of success, -EINVAL otherwise
+ */
+int ad74413r_range_to_voltage_offset(enum ad74413r_adc_range range,
+				     int32_t *val)
+{
+	switch (range) {
+	case AD74413R_ADC_RANGE_10V:
+	case AD74413R_ADC_RANGE_2P5V_EXT_POW:
+	case AD74413R_ADC_RANGE_2P5V_INT_POW:
+		*val = 0;
+		break;
+	case AD74413R_ADC_RANGE_5V_BI_DIR:
+		*val = (-(int)AD74413R_ADC_MAX_VALUE / 2);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
  * @brief Converts a millivolt value in the corresponding DAC 13 bit code.
  * @param mvolts - The millivolts value.
  * @param code - The resulting DAC code.
@@ -185,6 +237,9 @@ int ad74413r_reg_read_raw(struct ad74413r_desc *desc, uint32_t addr,
 				       AD74413R_FRAME_SIZE);
 	if (ret)
 		return ret;
+
+	/* Make sure that NOP sequence is written for the second frame */
+	ad74413r_format_reg_write(AD74413R_NOP, AD74413R_NOP, val);
 
 	return no_os_spi_write_and_read(desc->comm_desc, val, AD74413R_FRAME_SIZE);
 }
@@ -270,7 +325,7 @@ int ad74413r_nb_active_channels(struct ad74413r_desc *desc,
 	if (ret)
 		return ret;
 
-	reg_val = no_os_field_get(NO_OS_GENMASK(3, 0), reg_val);
+	reg_val = no_os_field_get(NO_OS_GENMASK(7, 0), reg_val);
 	*nb_channels = no_os_hweight8((uint8_t)reg_val);
 
 	return 0;
@@ -327,7 +382,7 @@ static int ad74413r_scratch_test(struct ad74413r_desc *desc)
 }
 
 /**
- * @brief Perform a soft reset.
+ * @brief Perform either a software or hardware reset and wait for device reset time.
  * @param desc - The device structure.
  * @return 0 in case of success, negative error code otherwise.
  */
@@ -335,11 +390,31 @@ int ad74413r_reset(struct ad74413r_desc *desc)
 {
 	int ret;
 
-	ret = ad74413r_reg_write(desc, AD74413R_CMD_KEY, AD74413R_CMD_KEY_RESET_1);
-	if (ret)
-		return ret;
+	if (desc->reset_gpio) {
+		ret = no_os_gpio_direction_output(desc->reset_gpio,
+						  NO_OS_GPIO_LOW);
+		if (ret)
+			return ret;
 
-	return ad74413r_reg_write(desc, AD74413R_CMD_KEY, AD74413R_CMD_KEY_RESET_2);
+		/* Minimum RESET signal pulse duration */
+		no_os_udelay(50);
+		ret = no_os_gpio_set_value(desc->reset_gpio, NO_OS_GPIO_HIGH);
+		if (ret)
+			return ret;
+	} else {
+		ret = ad74413r_reg_write(desc, AD74413R_CMD_KEY, AD74413R_CMD_KEY_RESET_1);
+		if (ret)
+			return ret;
+
+		ret = ad74413r_reg_write(desc, AD74413R_CMD_KEY, AD74413R_CMD_KEY_RESET_2);
+		if (ret)
+			return ret;
+	}
+
+	/* Time taken for device reset (datasheet value = 1ms) */
+	no_os_mdelay(1);
+
+	return 0;
 }
 
 /**
@@ -354,6 +429,17 @@ int ad74413r_set_channel_function(struct ad74413r_desc *desc,
 {
 	int ret;
 
+	ret = ad74413r_set_channel_dac_code(desc, ch, 0);
+	if (ret)
+		return ret;
+
+	ret = ad74413r_reg_update(desc, AD74413R_CH_FUNC_SETUP(ch),
+				  AD74413R_CH_FUNC_SETUP_MASK, AD74413R_HIGH_Z);
+	if (ret)
+		return ret;
+
+	/* Each function should be selected for at least 130 us. */
+	no_os_udelay(130);
 	ret = ad74413r_reg_update(desc, AD74413R_CH_FUNC_SETUP(ch),
 				  AD74413R_CH_FUNC_SETUP_MASK, ch_func);
 	if (ret)
@@ -363,6 +449,9 @@ int ad74413r_set_channel_function(struct ad74413r_desc *desc,
 				  AD74413R_CH_200K_TO_GND_MASK, 1);
 	if (ret)
 		return ret;
+
+	/* No writes to the DACx registers may be done for 150 us after changing function */
+	no_os_udelay(150);
 
 	desc->channel_configs[ch].function = ch_func;
 
@@ -462,6 +551,31 @@ int ad74413r_get_adc_rejection(struct ad74413r_desc *desc, uint32_t ch,
 }
 
 /**
+ * @brief Get the rejection setting for a specific channel.
+ * @param desc - The device structure.
+ * @param val - The ADC rejection setting.
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int ad74413r_get_adc_diag_rejection(struct ad74413r_desc *desc,
+				    enum ad74413r_rejection *val)
+{
+	int ret;
+	uint16_t reg_val;
+
+	ret = ad74413r_reg_read(desc, AD74413R_ADC_CONV_CTRL, &reg_val);
+	if (ret)
+		return ret;
+
+	reg_val = no_os_field_get(AD74413R_EN_REJ_DIAG_MASK, reg_val);
+	if (reg_val)
+		*val = AD74413R_REJECTION_50_60;
+	else
+		*val = AD74413R_REJECTION_NONE;
+
+	return 0;
+}
+
+/**
  * @brief Set the rejection setting for a specific channel.
  * @param desc - The device structure.
  * @param ch - The channel index.
@@ -516,6 +630,53 @@ int ad74413r_set_adc_rate(struct ad74413r_desc *desc, uint32_t ch,
 }
 
 /**
+ * @brief Get the ADC sample rate for the diagnostics channels.
+ * @param desc - The device structure.
+ * @param ch - The diagnostics channel index.
+ * @param val - The ADC sample rate value.
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int ad74413r_get_adc_diag_rate(struct ad74413r_desc *desc, uint32_t ch,
+			       enum ad74413r_adc_sample *val)
+{
+	enum ad74413r_rejection rejection;
+	int ret;
+
+	ret = ad74413r_get_adc_diag_rejection(desc, &rejection);
+	if (ret)
+		return ret;
+
+	return ad74413r_rejection_to_rate(rejection, val);
+}
+
+/**
+ * @brief Set the ADC sample rate for the diagnostics channels.
+ * @param desc - The device structure.
+ * @param ch - The diagnostics channel index.
+ * @param val - The ADC sample rate value.
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int ad74413r_set_adc_diag_rate(struct ad74413r_desc *desc, uint32_t ch,
+			       enum ad74413r_adc_sample val)
+{
+	uint16_t reg_val;
+
+	switch (val) {
+	case AD74413R_ADC_SAMPLE_20HZ:
+		reg_val = 1;
+		break;
+	case AD74413R_ADC_SAMPLE_4800HZ:
+		reg_val = 0;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return ad74413r_reg_update(desc, AD74413R_ADC_CONV_CTRL,
+				   AD74413R_EN_REJ_DIAG_MASK, reg_val);
+}
+
+/**
  * @brief Start or stop ADC conversions.
  * @param desc - The device structure.
  * @param status - The ADC conversion sequence.
@@ -544,17 +705,21 @@ int ad74413r_set_adc_conv_seq(struct ad74413r_desc *desc,
  * @param desc - The device structure.
  * @param ch - The channel index.
  * @param val - The ADC raw result.
+ * @param is_diag - Select which channel type does the index refer to (I/O or diagnostics).
  * @return 0 in case of success, negative error code otherwise.
  */
 int ad74413r_get_adc_single(struct ad74413r_desc *desc, uint32_t ch,
-			    uint16_t *val)
+			    uint16_t *val, bool is_diag)
 {
 	int ret;
 	uint32_t delay;
 	uint8_t nb_active_channels;
 	enum ad74413r_rejection rejection;
 
-	ret = ad74413r_set_adc_channel_enable(desc, ch, true);
+	if (is_diag)
+		ret = ad74413r_set_diag_channel_enable(desc, ch, true);
+	else
+		ret = ad74413r_set_adc_channel_enable(desc, ch, true);
 	if (ret)
 		return ret;
 
@@ -566,7 +731,10 @@ int ad74413r_get_adc_single(struct ad74413r_desc *desc, uint32_t ch,
 	if (ret)
 		return ret;
 
-	ret = ad74413r_get_adc_rejection(desc, ch, &rejection);
+	if (is_diag)
+		ret = ad74413r_get_adc_diag_rejection(desc, &rejection);
+	else
+		ret = ad74413r_get_adc_rejection(desc, ch, &rejection);
 	if (ret)
 		return ret;
 
@@ -581,13 +749,19 @@ int ad74413r_get_adc_single(struct ad74413r_desc *desc, uint32_t ch,
 	else
 		no_os_mdelay((delay * nb_active_channels) / 1000);
 
-	ret = ad74413r_get_raw_adc_result(desc, ch, val);
+	if (is_diag)
+		ret = ad74413r_get_diag(desc, ch, val);
+	else
+		ret = ad74413r_get_raw_adc_result(desc, ch, val);
 	if (ret)
 		return ret;
 
 	ret = ad74413r_set_adc_conv_seq(desc, AD74413R_STOP_PWR_DOWN);
 	if (ret)
 		return ret;
+
+	if (is_diag)
+		return ad74413r_set_diag_channel_enable(desc, ch, false);
 
 	return ad74413r_set_adc_channel_enable(desc, ch, false);
 }
@@ -606,7 +780,7 @@ int ad74413r_adc_get_value(struct ad74413r_desc *desc, uint32_t ch,
 	int ret;
 	uint16_t adc_code;
 
-	ret = ad74413r_get_adc_single(desc, ch, &adc_code);
+	ret = ad74413r_get_adc_single(desc, ch, &adc_code, false);
 	if (ret)
 		return ret;
 
@@ -614,7 +788,7 @@ int ad74413r_adc_get_value(struct ad74413r_desc *desc, uint32_t ch,
 	case AD74413R_HIGH_Z:
 		val->integer = no_os_div_u64_rem(adc_code * AD74413R_RANGE_10V_SCALE,
 						 AD74413R_RANGE_10V_SCALE_DIV,
-						 &val->decimal);
+						 (uint32_t *)&val->decimal);
 		break;
 	case AD74413R_VOLTAGE_OUT:
 		/**
@@ -623,36 +797,38 @@ int ad74413r_adc_get_value(struct ad74413r_desc *desc, uint32_t ch,
 		val->integer = no_os_div_s64_rem((adc_code + AD74413R_RANGE_5V_OFFSET) *
 						 AD74413R_RANGE_5V_SCALE,
 						 AD74413R_RSENSE * AD74413R_RANGE_5V_SCALE_DIV,
-						 (int32_t *)&val->decimal);
+						 &val->decimal);
 		break;
 	case AD74413R_CURRENT_OUT:
 	case AD74413R_VOLTAGE_IN:
 		val->integer = no_os_div_u64_rem(adc_code * AD74413R_RANGE_10V_SCALE,
 						 AD74413R_RANGE_10V_SCALE_DIV,
-						 &val->decimal);
+						 (uint32_t *)&val->decimal);
 		break;
 	case AD74413R_CURRENT_IN_EXT_HART:
 		if (desc->chip_id == AD74412R)
 			return -ENOTSUP;
+	/* fallthrough */
 	case AD74413R_CURRENT_IN_LOOP_HART:
 		if (desc->chip_id == AD74412R)
 			return -ENOTSUP;
+	/* fallthrough */
 	case AD74413R_CURRENT_IN_EXT:
 	case AD74413R_CURRENT_IN_LOOP:
 		val->integer = no_os_div_u64_rem(adc_code * AD74413R_RANGE_2V5_SCALE,
 						 AD74413R_RANGE_2V5_SCALE_DIV * AD74413R_RSENSE,
-						 &val->decimal);
+						 (uint32_t *)&val->decimal);
 		break;
 	case AD74413R_RESISTANCE:
 		val->integer = no_os_div_u64_rem(adc_code * AD74413R_RTD_PULL_UP,
 						 AD74413R_ADC_MAX_VALUE - adc_code,
-						 &val->decimal);
+						 (uint32_t *)&val->decimal);
 		break;
 	case AD74413R_DIGITAL_INPUT:
 	case AD74413R_DIGITAL_INPUT_LOOP:
 		val->integer = no_os_div_u64_rem(adc_code * AD74413R_RANGE_10V_SCALE,
 						 AD74413R_RANGE_10V_SCALE_DIV,
-						 &val->decimal);
+						 (uint32_t *)&val->decimal);
 		break;
 	default:
 		return -EINVAL;
@@ -1016,17 +1192,22 @@ int ad74413r_init(struct ad74413r_desc **desc,
 
 	no_os_crc8_populate_msb(_crc_table, AD74413R_CRC_POLYNOMIAL);
 
-	ret = ad74413r_reset(descriptor);
+	ret = no_os_gpio_get_optional(&descriptor->reset_gpio,
+				      init_param->reset_gpio_param);
 	if (ret)
 		goto comm_err;
+
+	ret = ad74413r_reset(descriptor);
+	if (ret)
+		goto free_reset;
 
 	ret = ad74413r_clear_errors(descriptor);
 	if (ret)
-		goto comm_err;
+		goto free_reset;
 
 	ret = ad74413r_scratch_test(descriptor);
 	if (ret)
-		goto comm_err;
+		goto free_reset;
 
 	descriptor->chip_id = init_param->chip_id;
 
@@ -1034,6 +1215,8 @@ int ad74413r_init(struct ad74413r_desc **desc,
 
 	return 0;
 
+free_reset:
+	no_os_gpio_remove(descriptor->reset_gpio);
 comm_err:
 	no_os_spi_remove(descriptor->comm_desc);
 err:
@@ -1053,6 +1236,17 @@ int ad74413r_remove(struct ad74413r_desc *desc)
 
 	if (!desc)
 		return -EINVAL;
+
+	/* Perform a reset to bring the device in the default state */
+	ret = ad74413r_reset(desc);
+	if (ret)
+		return ret;
+
+	if (desc->reset_gpio) {
+		ret = no_os_gpio_remove(desc->reset_gpio);
+		if (ret)
+			return ret;
+	}
 
 	ret = no_os_spi_remove(desc->comm_desc);
 	if (ret)

@@ -7,6 +7,7 @@ SRCS += $(NO-OS)/util/no_os_util.c \
 	$(NO-OS)/util/no_os_lf256fifo.c \
 	$(NO-OS)/util/no_os_list.c \
 	$(NO-OS)/util/no_os_alloc.c \
+	$(NO-OS)/util/no_os_mutex.c \
 	$(PLATFORM_DRIVERS)/aducm3029_uart_stdio.c \
 	$(PLATFORM_DRIVERS)/$(PLATFORM)_rtc.c \
 	$(PLATFORM_DRIVERS)/platform_init.c \
@@ -31,6 +32,7 @@ INCS +=	$(INCLUDE)/no_os_uart.h \
 	$(INCLUDE)/no_os_print_log.h \
 	$(INCLUDE)/no_os_list.h \
 	$(INCLUDE)/no_os_alloc.h \
+	$(INCLUDE)/no_os_mutex.h \
 	$(PLATFORM_DRIVERS)/aducm3029_irq.h \
 	$(PLATFORM_DRIVERS)/aducm3029_i2c.h \
 	$(PLATFORM_DRIVERS)/aducm3029_timer.h \
@@ -41,7 +43,7 @@ INCS +=	$(INCLUDE)/no_os_uart.h \
 	$(DRIVERS)/cdc/ad7746/ad7746.h \
 	$(PROJECT)/src/app/parameters.h
 
-ifeq (y,$(strip $(TINYIIOD)))
+ifeq (y,$(strip $(IIOD)))
 LIBRARIES += iio
 SRCS += $(DRIVERS)/cdc/ad7746/iio_ad7746.c \
 	$(NO-OS)/iio/iio_app/iio_app.c \

@@ -1,6 +1,6 @@
 /***************************************************************************//**
- *   @file   eval-adis/src/common/common_data.h
- *   @brief  Defines common data to be used by eval-adis examples.
+ *   @file   eval-adis1657x/src/common/common_data.h
+ *   @brief  Defines common data to be used by eval-adis1657x examples.
  *   @author RBolboac (ramona.bolboaca@analog.com)
 ********************************************************************************
  * Copyright 2023(c) Analog Devices, Inc.
@@ -48,7 +48,6 @@
 #include "adis1657x.h"
 #ifdef IIO_SUPPORT
 #include "iio_adis1657x.h"
-#include "iio_adis.h"
 #ifdef IIO_TRIGGER_EXAMPLE
 #include "iio_trigger.h"
 #endif

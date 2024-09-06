@@ -43,7 +43,6 @@
 #include "tmr.h"
 #include "maxim_timer.h"
 #include "no_os_error.h"
-#include "no_os_timer.h"
 #include "no_os_util.h"
 #include "no_os_alloc.h"
 
@@ -101,7 +100,7 @@ static int _get_prescaler(uint32_t div, mxc_tmr_pres_t *prescaler)
  * @return 0 in case of success, negative errno error codes otherwise.
  */
 int max_timer_init(struct no_os_timer_desc **desc,
-		   struct no_os_timer_init_param *param)
+		   const struct no_os_timer_init_param *param)
 {
 	int ret;
 	uint32_t clk_div;

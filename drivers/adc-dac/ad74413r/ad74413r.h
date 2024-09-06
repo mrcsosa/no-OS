@@ -42,8 +42,10 @@
 #include "stdint.h"
 #include "stdbool.h"
 #include "no_os_spi.h"
+#include "no_os_gpio.h"
 
 #define AD74413R_N_CHANNELS             4
+#define AD74413R_N_DIAG_CHANNELS	4
 
 #define AD74413R_CH_A                   0
 #define AD74413R_CH_B                   1
@@ -133,18 +135,25 @@
 #define AD74413R_COMP_THRESH_MASK		NO_OS_GENMASK(5, 1)
 #define AD74413R_DIN_THRESH_MODE_MASK		NO_OS_BIT(0)
 
+/** DIN_COMP_OUT register */
+#define AD74413R_DIN_COMP_CH(x)			NO_OS_BIT(x)
+
 /** ADC_CONV_CTRL register */
+#define AD74413R_EN_REJ_DIAG_MASK		NO_OS_BIT(10)
 #define AD74413R_CONV_SEQ_MASK                  NO_OS_GENMASK(9, 8)
 #define AD74413R_DIAG_EN_MASK(x)		(NO_OS_BIT(x) << 4)
 #define AD74413R_CH_EN_MASK(x)                  NO_OS_BIT(x)
 
 /** DIAG_ASSIGN register */
-#define AD74413R_DIAG_ASSIGN_MASK(x)		(NO_OS_GENMASK(3, 0) << (x))
+#define AD74413R_DIAG_ASSIGN_MASK(x)		(NO_OS_GENMASK(3, 0) << (x * 4))
 
 /** The maximum voltage output of the DAC is 11V */
 #define AD74413R_DAC_RANGE			11000
 /** 13 bit DAC */
 #define AD74413R_DAC_RESOLUTION			13
+#define AD74413R_DAC_CODE_MAX			8191
+#define AD74413R_ADC_RESOLUTION			16
+#define AD74413R_ADC_CODE_MAX			65536
 
 /** The number of possible DAC values */
 #define AD74413R_THRESHOLD_DAC_RANGE		29
@@ -163,6 +172,7 @@
 #define AD74413R_RANGE_5V_SCALE_DIV		1000000ULL
 #define AD74413R_RANGE_5V_OFFSET		-(AD74413R_ADC_MAX_VALUE / 2)
 #define AD74413R_RTD_PULL_UP			2100000ULL
+#define AD74413R_SENSE_RESISTOR_OHMS		100
 
 /**
  * @brief The chips supported by this driver.
@@ -292,6 +302,7 @@ enum ad74413r_adc_sample {
 struct ad74413r_init_param {
 	enum ad74413r_chip_id chip_id;
 	struct no_os_spi_init_param comm_param;
+	struct no_os_gpio_init_param *reset_gpio_param;
 };
 
 /**
@@ -299,7 +310,7 @@ struct ad74413r_init_param {
  */
 struct ad74413r_decimal {
 	int64_t integer;
-	uint32_t decimal;
+	int32_t decimal;
 };
 
 /**
@@ -346,10 +357,16 @@ struct ad74413r_desc {
 	struct no_os_spi_desc *comm_desc;
 	uint8_t comm_buff[4];
 	struct ad74413r_channel_config channel_configs[AD74413R_N_CHANNELS];
+	struct no_os_gpio_desc *reset_gpio;
 };
 
 /** Converts a millivolt value in the corresponding DAC 13 bit code */
 int ad74413r_dac_voltage_to_code(uint32_t, uint32_t *);
+
+/** Convert a voltage range from an enum representation to a millivolt value */
+int ad74413r_range_to_voltage_range(enum ad74413r_adc_range, uint32_t *);
+
+int ad74413r_range_to_voltage_offset(enum ad74413r_adc_range, int32_t *);
 
 /** Write a register's value */
 int ad74413r_reg_write(struct ad74413r_desc *, uint32_t, uint16_t);
@@ -376,7 +393,7 @@ int ad74413r_clear_errors(struct ad74413r_desc *);
  */
 int ad74413r_set_info(struct ad74413r_desc *desc, uint16_t mode);
 
-/** Perform a soft reset */
+/** Perform either a software or hardware reset and wait for device reset time. */
 int ad74413r_reset(struct ad74413r_desc *);
 
 /** Set the operation mode for a specific channel */
@@ -401,6 +418,10 @@ int ad74413r_get_adc_range(struct ad74413r_desc *, uint32_t, uint16_t *);
 int ad74413r_get_adc_rejection(struct ad74413r_desc *, uint32_t,
 			       enum ad74413r_rejection *);
 
+/** Get the rejection setting for any diagnostics channel */
+int ad74413r_get_adc_diag_rejection(struct ad74413r_desc *,
+				    enum ad74413r_rejection *);
+
 /** Set the rejection setting for a specific channel */
 int ad74413r_set_adc_rejection(struct ad74413r_desc *, uint32_t,
 			       enum ad74413r_rejection);
@@ -413,11 +434,19 @@ int ad74413r_get_adc_rate(struct ad74413r_desc *, uint32_t,
 int ad74413r_set_adc_rate(struct ad74413r_desc *, uint32_t,
 			  enum ad74413r_adc_sample);
 
+/** Get the ADC sample rate for the diagnostics channels. */
+int ad74413r_get_adc_diag_rate(struct ad74413r_desc *, uint32_t,
+			       enum ad74413r_adc_sample *);
+
+/** Set the ADC sample rate for the diagnostics channels. */
+int ad74413r_set_adc_diag_rate(struct ad74413r_desc *, uint32_t,
+			       enum ad74413r_adc_sample);
+
 /** Start or stop ADC conversions */
 int ad74413r_set_adc_conv_seq(struct ad74413r_desc *, enum ad74413r_conv_seq);
 
 /** Get a single ADC raw value for a specific channel, then power down the ADC */
-int ad74413r_get_adc_single(struct ad74413r_desc *, uint32_t, uint16_t *);
+int ad74413r_get_adc_single(struct ad74413r_desc *, uint32_t, uint16_t *, bool);
 
 /** Get the ADC real value, according to the operation mode */
 int ad74413r_adc_get_value(struct ad74413r_desc *, uint32_t,

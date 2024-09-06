@@ -42,16 +42,38 @@
 /******************************************************************************/
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "no_os_error.h"
 #include "no_os_delay.h"
+#include "no_os_units.h"
 #include "ad463x.h"
 #include "no_os_print_log.h"
 #include "no_os_alloc.h"
+#include "no_os_spi.h"
 
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
 #define AD463x_TEST_DATA 0xAA
+
+#define ADAQ4224_GAIN_MAX_NANO 6670000000ULL
+
+/*
+ * Gains computed as fractions of 1000 so they can be expressed by integers.
+ */
+static const int32_t ad463x_gains[4] = {
+	330, 560, 2220, 6670
+};
+
+/*
+ * Gains stored and computed as fractions to avoid introducing rounding errors.
+ */
+static const int ad4630_gains_frac[4][2] = {
+	[AD463X_GAIN_0_33] = {1, 3},
+	[AD463X_GAIN_0_56] = {5, 9},
+	[AD463X_GAIN_2_22] = {20, 9},
+	[AD463X_GAIN_6_67] = {20, 3},
+};
 
 /******************************************************************************/
 /************************* Functions Definitions ******************************/
@@ -97,6 +119,25 @@ int32_t ad463x_spi_reg_write(struct ad463x_dev *dev,
 	buf[0] = ((reg_addr >> 8) & 0x7F);
 	buf[1] = (uint8_t)reg_addr;
 	buf[2] = reg_data;
+
+	return no_os_spi_write_and_read(dev->spi_desc, buf, 3);
+}
+
+/**
+ * @brief Enter register configuration mode.
+ * @param dev - The device structure.
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int32_t ad463x_enter_config_mode(struct ad463x_dev *dev)
+{
+	uint8_t buf[3];
+
+	if (!dev)
+		return -EINVAL;
+
+	buf[0] = 0xA0;
+	buf[1] = 0x00;
+	buf[2] = 0x00;
 
 	return no_os_spi_write_and_read(dev->spi_desc, buf, 3);
 }
@@ -233,12 +274,14 @@ int32_t ad463x_exit_reg_cfg_mode(struct ad463x_dev *dev)
 	if (ret != 0)
 		return ret;
 
-	ret = spi_engine_set_transfer_width(dev->spi_desc,
-					    dev->capture_data_width);
-	if (ret != 0)
-		return ret;
+	if (dev->offload_enable) {
+		ret = spi_engine_set_transfer_width(dev->spi_desc,
+						    dev->capture_data_width);
+		if (ret != 0)
+			return ret;
 
-	spi_engine_set_speed(dev->spi_desc, dev->spi_desc->max_speed_hz);
+		spi_engine_set_speed(dev->spi_desc, dev->spi_desc->max_speed_hz);
+	}
 
 	return ret;
 }
@@ -314,26 +357,60 @@ static int32_t ad463x_init_gpio(struct ad463x_dev *dev,
 				struct ad463x_init_param *init_param)
 {
 	int32_t ret;
-
+	/* configure reset pin */
 	ret = no_os_gpio_get_optional(&dev->gpio_resetn, init_param->gpio_resetn);
 	if (ret != 0)
 		return ret;
 
 	/** Reset to configure pins */
-	if (dev->gpio_resetn) {
-		ret = no_os_gpio_direction_output(dev->gpio_resetn, NO_OS_GPIO_LOW);
-		if (ret != 0)
-			return ret;
+	ret = no_os_gpio_direction_output(dev->gpio_resetn, NO_OS_GPIO_LOW);
+	if (ret != 0)
+		goto error_gpio_reset;
 
-		no_os_mdelay(100);
-		ret = no_os_gpio_set_value(dev->gpio_resetn, NO_OS_GPIO_HIGH);
-		if (ret != 0)
-			return ret;
+	no_os_mdelay(100);
+	ret = no_os_gpio_set_value(dev->gpio_resetn, NO_OS_GPIO_HIGH);
+	if (ret != 0)
+		goto error_gpio_reset;
 
-		no_os_mdelay(100);
+	no_os_mdelay(100);
+
+	ret = no_os_gpio_get_optional(&dev->gpio_cnv, init_param->gpio_cnv);
+	if (ret != 0)
+		goto error_gpio_reset;
+
+	ret = no_os_gpio_direction_output(dev->gpio_cnv, NO_OS_GPIO_LOW);
+	if (ret != 0)
+		goto error_gpio_cnv;
+
+	/** Configure PGIA pins, if available */
+	if (dev->has_pgia) {
+		ret = no_os_gpio_get_optional(&dev->gpio_pgia_a0,init_param->gpio_pgia_a0);
+		if (ret != 0)
+			goto error_gpio_cnv;
+		ret = no_os_gpio_get_optional(&dev->gpio_pgia_a1, init_param->gpio_pgia_a1);
+		if (ret != 0)
+			goto error_gpio_pgia0;
+		/* set default values */
+		ret = no_os_gpio_direction_output(dev->gpio_pgia_a0, NO_OS_GPIO_LOW);
+		if (ret != 0)
+			goto error_gpio_pgia1;
+		ret = no_os_gpio_direction_output(dev->gpio_pgia_a1, NO_OS_GPIO_LOW);
+		if (ret != 0)
+			goto error_gpio_pgia1;
 	}
 
 	return 0;
+
+error_gpio_pgia1:
+	no_os_gpio_remove(dev->gpio_pgia_a1);
+error_gpio_pgia0:
+	no_os_gpio_remove(dev->gpio_pgia_a0);
+error_gpio_cnv:
+	no_os_gpio_remove(dev->gpio_cnv);
+error_gpio_reset:
+	no_os_gpio_remove(dev->gpio_resetn);
+
+	return ret;
 }
 
 /**
@@ -344,9 +421,9 @@ static int32_t ad463x_init_gpio(struct ad463x_dev *dev,
  * @param [in] samples - sample number.
  * @return 0 in case of success, -1 otherwise.
  */
-int32_t ad463x_read_data(struct ad463x_dev *dev,
-			 uint32_t *buf,
-			 uint16_t samples)
+int32_t ad463x_read_data_offload(struct ad463x_dev *dev,
+				 uint32_t *buf,
+				 uint16_t samples)
 {
 	int32_t ret;
 	uint32_t commands_data[1] = {0};
@@ -370,14 +447,240 @@ int32_t ad463x_read_data(struct ad463x_dev *dev,
 	msg.rx_addr = (uint32_t)buf;
 	msg.commands_data = commands_data;
 
+	if (dev->dcache_invalidate_range)
+		dev->dcache_invalidate_range(msg.rx_addr, samples * 2 * sizeof(buf[0]));
+
+	/* both channels are read with a single transfer */
 	ret = spi_engine_offload_transfer(dev->spi_desc, msg, samples);
 	if (ret != 0)
 		return ret;
 
 	if (dev->dcache_invalidate_range)
-		dev->dcache_invalidate_range(msg.rx_addr, samples * 2);
+		dev->dcache_invalidate_range(msg.rx_addr, samples * 2 * sizeof(buf[0]));
+
+	if (dev->lane_mode == AD463X_SHARED_TWO_CH) {
+		for (int i = 0; i < samples * 2; i++)
+			buf[i] = no_os_get_unaligned_be32(&buf[i]);
+	}
 
 	return ret;
+}
+
+/**
+ * @brief Parallel Bits Extract
+ * @param in0 - fist byte of interleaved data
+ * @param in1 - second byte of interleaved data
+ * @param out0 - unscrambled byte 0
+ * @param out1 - unscrambled byte 1
+ * @return none
+ */
+static void ad463x_pext(uint8_t in0, uint8_t in1,
+			uint8_t *out0, uint8_t *out1)
+{
+	uint8_t high0, high1, low0, low1;
+
+	high0 = in0;
+	low1 = in1;
+	high1 = high0 << 1;
+	low0 = low1 >> 1;
+
+	high0 &= 0xAA;
+	high1 &= 0xAA;
+	low0 &= 0x55;
+	low1 &= 0x55;
+
+	high0 = (high0 | high0 << 001) & 0xCC;
+	high0 = (high0 | high0 << 002) & 0xF0;
+
+	high1 = (high1 | high1 << 001) & 0xCC;
+	high1 = (high1 | high1 << 002) & 0xF0;
+
+	low0 = (low0 | low0 >> 001) & 0x33;
+	low0 = (low0 | low0 >> 002) & 0x0F;
+
+	low1 = (low1 | low1 >> 001) & 0x33;
+	low1 = (low1 | low1 >> 002) & 0x0F;
+
+	*out0 = high0 | low0;
+	*out1 = high1 | low1;
+}
+
+/**
+ * @brief Parallel Bits Extract for sample
+ * @param buf - buffer of interleaved data
+ * @param size - number of bytes in the buffer
+ * @param ch0_out - unscrambled byte 0
+ * @param ch1_out - unscrambled byte 1
+ * @return none
+ */
+static void ad463x_pext_sample(struct ad463x_dev *dev,
+			       uint8_t *buf, int size,
+			       uint32_t *ch0_out,
+			       uint32_t *ch1_out)
+{
+	uint8_t data[8] = {0};
+	uint8_t ch0[4];
+	uint8_t ch1[4];
+	int shift;
+
+	memcpy(data, buf, size);
+	ad463x_pext(data[0], data[1], &ch0[0], &ch1[0]);
+	ad463x_pext(data[2], data[3], &ch0[1], &ch1[1]);
+	ad463x_pext(data[4], data[5], &ch0[2], &ch1[2]);
+	ad463x_pext(data[6], data[7], &ch0[3], &ch1[3]);
+
+	*ch0_out = no_os_get_unaligned_be32(ch0);
+	*ch1_out = no_os_get_unaligned_be32(ch1);
+
+	shift = 32 - dev->real_bits_precision;
+	if (shift) {
+		*ch1_out >>= shift;
+		*ch0_out >>= shift;
+	}
+}
+
+/**
+ * @brief read a single sample of data
+ * @param dev - ad469x_dev device handler.
+ * @param ch0_out - pointer to store channel 0 data
+ * @param ch1_out - pointer to store channel 1 data
+ * @return 0 in case of success, negative value otherwise.
+ */
+static int32_t ad463x_read_single_sample(struct ad463x_dev *dev,
+		uint32_t *ch0_out,  uint32_t *ch1_out)
+{
+	uint8_t data[8] = {0};
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	ret = no_os_gpio_set_value(dev->gpio_cnv, NO_OS_GPIO_HIGH);
+	if (ret)
+		return ret;
+
+	ret = no_os_gpio_set_value(dev->gpio_cnv, NO_OS_GPIO_LOW);
+	if (ret)
+		return ret;
+
+	ret = no_os_spi_write_and_read(dev->spi_desc, data, dev->read_bytes_no);
+	if (ret)
+		return ret;
+
+	ad463x_pext_sample(dev, data, dev->read_bytes_no, ch0_out, ch1_out);
+
+	return 0;
+}
+
+/**
+ * @brief Read from device using dma
+ * @param dev - ad469x_dev device handler.
+ * @param buf - data buffer
+ * @param samples - sample number.
+ * @return 0 in case of success, negative otherwise.
+ */
+static int32_t ad463x_read_data_dma(struct ad463x_dev *dev,
+				    uint32_t *buf,
+				    uint16_t samples)
+{
+	struct no_os_spi_msg spi_msg;
+	uint32_t *p_buf = buf;
+	uint8_t tx_buf = 0;
+	uint8_t *rx_buf, *rx_sample;
+	int ret, i;
+
+	if (!dev)
+		return -EINVAL;
+
+	rx_buf = no_os_calloc(1, samples * dev->read_bytes_no);
+	if (!rx_buf)
+		return -ENOMEM;
+
+	spi_msg.tx_buff = &tx_buf,
+	spi_msg.bytes_number = samples * dev->read_bytes_no,
+	spi_msg.rx_buff = rx_buf,
+
+	ret = no_os_pwm_enable(dev->trigger_pwm_desc);
+	if (ret != 0)
+		goto out;
+
+	ret = no_os_spi_transfer_dma_sync(dev->spi_desc, &spi_msg, 1);
+	if (ret)
+		goto out;
+
+	ret = no_os_pwm_disable(dev->trigger_pwm_desc);
+	if (ret != 0)
+		goto out;
+
+	rx_sample = rx_buf;
+	for (i = 0; i < samples; i++) {
+		ad463x_pext_sample(dev, rx_sample, 6, p_buf, p_buf +1);
+		rx_sample += dev->read_bytes_no;
+		p_buf += 2;
+	}
+out:
+	no_os_free(rx_buf);
+	return ret;
+}
+
+/**
+ * @brief Read from device.
+ *        Enter register mode to read/write registers
+ * @param dev - ad469x_dev device handler.
+ * @param buf - data buffer.
+ * @param samples - sample number.
+ * @return 0 in case of success, negative otherwise.
+ */
+int32_t ad463x_read_data(struct ad463x_dev *dev,
+			 uint32_t *buf,
+			 uint16_t samples)
+{
+	uint32_t *p_buf;
+	int ret, i;
+
+	if (!dev)
+		return -EINVAL;
+
+	if (dev->offload_enable)
+		return ad463x_read_data_offload(dev, buf, samples);
+
+	if (dev->spi_dma_enable)
+		return ad463x_read_data_dma(dev, buf, samples);
+
+	for (i = 0, p_buf = buf; i < samples; i++, p_buf+=2) {
+		ret = ad463x_read_single_sample(dev, p_buf, p_buf +1);
+		if (ret)
+			return ret;
+	}
+	return 0;
+}
+
+/**
+ * @brief Fill Scales table based on the available PGIA gains.
+ * @param dev - Pointer to the device handler.
+ * @return None.
+ */
+static void ad463x_fill_scale_tbl(struct ad463x_dev *dev)
+{
+	int val, val2, tmp0;
+	int32_t tmp1;
+	unsigned int i;
+	int64_t tmp2;
+
+	if (!dev)
+		return -EINVAL;
+
+	val2 = dev->real_bits_precision;
+	for (i = 0; i < NO_OS_ARRAY_SIZE(ad463x_gains); i++) {
+		val = (dev->vref * 2) / MILLI;
+		val = val * ad4630_gains_frac[i][1] * MILLI;
+		val = val /ad4630_gains_frac[i][0];
+
+		tmp2 = no_os_shift_right((int64_t)val * MICRO, val2);
+		tmp0 = (int)no_os_div_s64_rem(tmp2, NANO, &tmp1);
+		dev->scale_table[i][0] = tmp0; /* Integer part */
+		dev->scale_table[i][1] = abs(tmp1); /* Fractional part */
+	}
 }
 
 /**
@@ -404,34 +707,15 @@ int32_t ad463x_init(struct ad463x_dev **device,
 		return -1;
 	}
 
-	dev = (struct ad463x_dev *)no_os_malloc(sizeof(*dev));
+	dev = (struct ad463x_dev *)no_os_calloc(1, sizeof(*dev));
 	if (!dev)
-		return -1;
+		return -ENOMEM;
 
-	/** Perform Hardware Reset */
-	ret = ad463x_init_gpio(dev, init_param);
-	if (ret != 0)
-		goto error_dev;
-
-	ret = axi_clkgen_init(&dev->clkgen, init_param->clkgen_init);
-	if (ret != 0) {
-		pr_err("error: %s: axi_clkgen_init() failed\n",
-		       init_param->clkgen_init->name);
-		goto error_gpio;
-	}
-
-	ret = axi_clkgen_set_rate(dev->clkgen, init_param->axi_clkgen_rate);
-	if (ret != 0) {
-		pr_err("error: %s: axi_clkgen_set_rate() failed\n",
-		       init_param->clkgen_init->name);
-		goto error_clkgen;
-	}
-
-	ret = no_os_spi_init(&dev->spi_desc, init_param->spi_init);
-	if (ret != 0)
-		goto error_clkgen;
-
+	dev->vref = init_param->vref;
+	dev->pgia_idx = 0;
 	dev->offload_init_param = init_param->offload_init_param;
+	dev->spi_dma_enable = init_param->spi_dma_enable;
+	dev->offload_enable = init_param->offload_enable;
 	dev->reg_access_speed = init_param->reg_access_speed;
 	dev->reg_data_width = init_param->reg_data_width;
 	dev->output_mode = init_param->output_mode;
@@ -440,6 +724,31 @@ int32_t ad463x_init(struct ad463x_dev **device,
 	dev->data_rate = init_param->data_rate;
 	dev->device_id = init_param->device_id;
 	dev->dcache_invalidate_range = init_param->dcache_invalidate_range;
+
+	/** Perform Hardware Reset and configure pins */
+	ret = ad463x_init_gpio(dev, init_param);
+	if (ret != 0)
+		goto error_dev;
+
+	if (dev->offload_enable) {
+		ret = axi_clkgen_init(&dev->clkgen, init_param->clkgen_init);
+		if (ret != 0) {
+			pr_err("error: %s: axi_clkgen_init() failed\n",
+			       init_param->clkgen_init->name);
+			goto error_gpio;
+		}
+
+		ret = axi_clkgen_set_rate(dev->clkgen, init_param->axi_clkgen_rate);
+		if (ret != 0) {
+			pr_err("error: %s: axi_clkgen_set_rate() failed\n",
+			       init_param->clkgen_init->name);
+			goto error_clkgen;
+		}
+	}
+
+	ret = no_os_spi_init(&dev->spi_desc, init_param->spi_init);
+	if (ret != 0)
+		goto error_clkgen;
 
 	if (dev->output_mode > AD463X_16_DIFF_8_COM)
 		sample_width = 32;
@@ -467,16 +776,48 @@ int32_t ad463x_init(struct ad463x_dev **device,
 		break;
 	}
 
+	switch (dev->output_mode) {
+	case AD463X_24_DIFF:
+		dev->real_bits_precision = 24;
+		break;
+
+	case AD463X_16_DIFF_8_COM:
+		dev->real_bits_precision = 16;
+		break;
+
+	case AD463X_24_DIFF_8_COM:
+		dev->real_bits_precision = 24;
+		break;
+
+	case AD463X_30_AVERAGED_DIFF:
+		dev->real_bits_precision = 30;
+		break;
+	case AD463X_32_PATTERN:
+		dev->real_bits_precision = 32;
+		break;
+	default:
+		goto error_spi;
+		break;
+	}
 	if (dev->data_rate == AD463X_DDR_MODE)
 		dev->capture_data_width /= 2;
 
 	dev->read_bytes_no = dev->capture_data_width / 8;
 
-	ret = spi_engine_set_transfer_width(dev->spi_desc, dev->reg_data_width);
-	if (ret != 0)
-		goto error_spi;
+	if (dev->device_id == ID_ADAQ4224) {
+		dev->has_pgia = true;
+		ad463x_fill_scale_tbl(dev);
+	} else {
+		dev->has_pgia = false;
+	}
 
-	spi_engine_set_speed(dev->spi_desc, dev->reg_access_speed);
+	if (dev->offload_enable) {
+		ret = spi_engine_set_transfer_width(dev->spi_desc, dev->reg_data_width);
+		if (ret != 0)
+			goto error_spi;
+
+		spi_engine_set_speed(dev->spi_desc, dev->reg_access_speed);
+	}
 
 	ret = ad463x_spi_reg_read(dev, AD463X_CONFIG_TIMING, &data);
 	if (ret != 0)
@@ -494,7 +835,6 @@ int32_t ad463x_init(struct ad463x_dev **device,
 		pr_err("Test Data read failed.\n");
 		goto error_spi;
 	}
-
 	ret = ad463x_spi_reg_write_masked(dev, AD463X_REG_MODES, AD463X_LANE_MODE_MSK,
 					  dev->lane_mode);
 	if (ret != 0)
@@ -515,9 +855,12 @@ int32_t ad463x_init(struct ad463x_dev **device,
 	if (ret != 0)
 		return ret;
 
-	ret = no_os_pwm_init(&dev->trigger_pwm_desc, init_param->trigger_pwm_init);
-	if (ret != 0)
-		goto error_spi;
+	if (dev->spi_dma_enable || dev->offload_enable) {
+		ret = no_os_pwm_init(&dev->trigger_pwm_desc,
+				     init_param->trigger_pwm_init);
+		if (ret != 0)
+			goto error_spi;
+	}
 
 	*device = dev;
 
@@ -526,13 +869,79 @@ int32_t ad463x_init(struct ad463x_dev **device,
 error_spi:
 	no_os_spi_remove(dev->spi_desc);
 error_clkgen:
-	axi_clkgen_remove(dev->clkgen);
+	if (dev->offload_enable)
+		axi_clkgen_remove(dev->clkgen);
 error_gpio:
 	no_os_gpio_remove(dev->gpio_resetn);
+	no_os_gpio_remove(dev->gpio_cnv);
+	no_os_gpio_remove(dev->gpio_pgia_a0);
+	no_os_gpio_remove(dev->gpio_pgia_a1);
 error_dev:
 	no_os_free(dev);
 
 	return -1;
+}
+
+/**
+ * @brief Calculate the PGIA gain.
+ * @param gain_int - Interger part of the gain.
+ * @param gain_fract - Fractional part of the gain.
+ * @param vref - Reference Voltage.
+ * @param precision - Precision  value shifter.
+ * @param gain_idx - Index of gain resulting from the calculation.
+ * @return Zero in case of success, negative number otherwise
+ */
+int32_t ad463x_calc_pgia_gain(int32_t gain_int, int32_t gain_fract,
+			      int32_t vref,
+			      int32_t precision,
+			      enum ad463x_pgia_gain *gain_idx)
+{
+	uint64_t gain_nano, tmp;
+
+	if (!gain_idx)
+		return -EINVAL;
+
+	gain_nano = (uint64_t)gain_int * NANO + gain_fract;
+	if (gain_nano > ADAQ4224_GAIN_MAX_NANO)
+		return -EINVAL;
+	tmp = gain_nano << precision;
+	tmp = NO_OS_DIV_ROUND_CLOSEST_ULL(tmp, NANO);
+	gain_nano = NO_OS_DIV_ROUND_CLOSEST_ULL(vref * 2, tmp);
+	*gain_idx = no_os_find_closest(gain_nano,
+				       ad463x_gains,
+				       NO_OS_ARRAY_SIZE(ad463x_gains));
+	return 0;
+}
+
+/**
+ * @brief Set the PGIA gain.
+ * @param dev - Pointer to the device handler.
+ * @param gain_idx - Gain control index.
+ * @return 0 in case of success, -1 otherwise
+ */
+int32_t ad463x_set_pgia_gain(struct ad463x_dev *dev,
+			     enum ad463x_pgia_gain gain_idx)
+{
+	int32_t ret;
+
+	if (!dev)
+		return -EINVAL;
+	/** Check if gain available in the ADC */
+	if (!dev->has_pgia)
+		return -EINVAL;
+	/** Check if gain gain_idx is in the valid range */
+	if (gain_idx > 3)
+		return -EINVAL;
+
+	/** update gain index value in the device handler */
+	dev->pgia_idx = gain_idx;
+	/** Set A0 and A1 pins according to gain index value */
+	ret = no_os_gpio_set_value(dev->gpio_pgia_a0, no_os_field_get(NO_OS_BIT(0),
+				   gain_idx));
+	if (ret != 0)
+		return ret;
+	return no_os_gpio_set_value(dev->gpio_pgia_a1, no_os_field_get(NO_OS_BIT(1),
+				    gain_idx));
 }
 
 /**
@@ -559,9 +968,23 @@ int32_t ad463x_remove(struct ad463x_dev *dev)
 	if (ret != 0)
 		return ret;
 
-	ret = axi_clkgen_remove(dev->clkgen);
+	ret = no_os_gpio_remove(dev->gpio_cnv);
 	if (ret != 0)
 		return ret;
+
+	ret = no_os_gpio_remove(dev->gpio_pgia_a0);
+	if (ret != 0)
+		return ret;
+
+	ret = no_os_gpio_remove(dev->gpio_pgia_a1);
+	if (ret != 0)
+		return ret;
+
+	if (dev->offload_enable) {
+		ret = axi_clkgen_remove(dev->clkgen);
+		if (ret != 0)
+			return ret;
+	}
 
 	no_os_free(dev);
 

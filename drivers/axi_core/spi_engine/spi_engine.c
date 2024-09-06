@@ -44,7 +44,9 @@
 /* In debug mode the printf function used in displaying the messages is causing
 significant delays */
 //#define DEBUG_LEVEL 2
+#include "spi_engine.h"
 
+#ifndef USE_STANDARD_SPI
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -56,6 +58,7 @@ significant delays */
 #include "no_os_axi_io.h"
 #include "no_os_error.h"
 #include "no_os_alloc.h"
+#include "no_os_util.h"
 #include "spi_engine.h"
 
 /**
@@ -172,7 +175,7 @@ static uint8_t spi_get_words_number(struct spi_engine_desc *desc,
 	uint8_t xfer_word_len;
 	uint8_t words_number;
 
-	xfer_word_len = desc->data_width / 8;
+	xfer_word_len = NO_OS_DIV_ROUND_UP(desc->data_width, 8);
 	words_number = bytes_number / xfer_word_len;
 
 	if ((bytes_number % xfer_word_len) != 0)
@@ -191,7 +194,7 @@ static uint8_t spi_get_word_lenght(struct spi_engine_desc *desc)
 {
 	uint8_t word_lenght;
 
-	word_lenght = desc->data_width / 8;
+	word_lenght = NO_OS_DIV_ROUND_UP(desc->data_width, 8);
 
 	return word_lenght;
 }
@@ -665,7 +668,9 @@ int32_t spi_engine_init(struct no_os_spi_desc **desc,
 
 	/* Get current data width */
 	spi_engine_read(eng_desc, SPI_ENGINE_REG_DATA_WIDTH, &data_width);
-	eng_desc->max_data_width = data_width;
+	/* Only the lower 16 bits are relevant for the actual data-width */
+	eng_desc->max_data_width = no_os_field_get(SPI_ENGINE_REG_DATA_WIDTH_MSK,
+				   data_width);
 
 	spi_engine_set_transfer_width(*desc, spi_engine_init->data_width);
 
@@ -765,16 +770,16 @@ int32_t spi_engine_offload_init(struct no_os_spi_desc *desc,
 
 	eng_desc->offload_config = param->offload_config;
 
-	if(!(param->dma_flags)) {
+	if(!param->dma_flags) {
 		eng_desc->cyclic = CYCLIC;
 	} else {
-		if((*(param->dma_flags)) & DMA_CYCLIC)
+		if(param->dma_flags & DMA_CYCLIC)
 			eng_desc->cyclic = CYCLIC;
 		else
 			eng_desc->cyclic = NO;
 	}
 
-
+	dmac_init.irq_option = IRQ_DISABLED;
 	if(param->offload_config & OFFLOAD_TX_EN) {
 		dmac_init.name = "DAC DMAC";
 		dmac_init.base = param->tx_dma_baseaddr;
@@ -808,7 +813,6 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 	struct spi_engine_msg	transfer;
 	struct spi_engine_desc	*eng_desc;
 	uint32_t 		i;
-	uint8_t 		word_length;
 
 	eng_desc = desc->extra;
 
@@ -843,12 +847,10 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 
 	/* Start transfer */
 	spi_engine_write(eng_desc, SPI_ENGINE_REG_OFFLOAD_CTRL(0), 0x0001);
-
-	word_length = spi_get_word_lenght(eng_desc);
 	if(eng_desc->offload_config & OFFLOAD_TX_EN) {
 		struct axi_dma_transfer tx_transfer = {
 			// Number of bytes to write/read
-			.size = word_length * eng_desc->offload_tx_len * no_samples,
+			.size = eng_desc->offload_tx_dma->width_src * eng_desc->offload_tx_len * no_samples,
 			// Transfer done flag
 			.transfer_done = 0,
 			// Signal transfer mode
@@ -864,7 +866,7 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 	if(eng_desc->offload_config & OFFLOAD_RX_EN) {
 		struct axi_dma_transfer rx_transfer = {
 			// Number of bytes to write/read
-			.size = word_length * eng_desc->offload_tx_len * no_samples,
+			.size = eng_desc->offload_rx_dma->width_src * eng_desc->offload_tx_len * no_samples,
 			// Transfer done flag
 			.transfer_done = 0,
 			// Signal transfer mode
@@ -906,3 +908,59 @@ int32_t spi_engine_remove(struct no_os_spi_desc *desc)
 
 	return 0;
 }
+
+#else
+int32_t spi_engine_write(struct spi_engine_desc *desc,
+			 uint32_t reg_addr,
+			 uint32_t reg_data)
+{
+	return 0;
+}
+
+int32_t spi_engine_read(struct spi_engine_desc *desc,
+			uint32_t reg_addr,
+			uint32_t *reg_data)
+{
+	return 0;
+}
+
+int32_t spi_engine_init(struct no_os_spi_desc **desc,
+			const struct no_os_spi_init_param *param)
+{
+	return 0;
+}
+
+int32_t spi_engine_write_and_read(struct no_os_spi_desc *desc,
+				  uint8_t *data,
+				  uint16_t bytes_number)
+{
+	return 0;
+}
+
+int32_t spi_engine_remove(struct no_os_spi_desc *desc)
+{
+	return 0;
+}
+
+int32_t spi_engine_offload_init(struct no_os_spi_desc *desc,
+				const struct spi_engine_offload_init_param *param)
+{
+	return 0;
+}
+
+int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
+				    struct spi_engine_offload_message msg,
+				    uint32_t no_samples)
+{
+	return 0;
+}
+
+int32_t spi_engine_set_transfer_width(struct no_os_spi_desc *desc,
+				      uint8_t data_wdith)
+{
+	return 0;
+}
+
+void spi_engine_set_speed(struct no_os_spi_desc *desc,
+			  uint32_t speed_hz) { }
+#endif

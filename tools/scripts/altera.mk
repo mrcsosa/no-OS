@@ -2,32 +2,9 @@
 #                           ENVIRONMENT VARIABLES                              
 #------------------------------------------------------------------------------
 
-#------------------------------------------------------------------------------
-#                         The adjust-path macro
-#
-# If Make is launched from Windows through
-# Windows Subsystem for Linux (WSL).  The adjust-path macro converts absolute windows 
-# paths into unix style paths (Example: c:/dir -> /c/dir). 
-# The adjust_path_mixed function converts WSL path to Windows path.
-# This will ensure paths are readable by GNU Make.
-#------------------------------------------------------------------------------
+adjust_path = $1
+adjust_path_mixed = $1
 
-ifeq ($(OS), Windows_NT)
-	ifneq ($(strip $(USE_LEGAY)),'y')
-		WSL = wsl
-		adjust_path = $(shell wsl wslpath $1)
-		adjust_path_mixed = $(if $(call eq,$(shell echo $1 | wsl head -c 5),/mnt/),$(shell echo $1 | wsl sed 's/\/mnt\///g;s/\//:\//1'),$1)
-	else
-		adjust_path = $1
-		adjust_path_mixed = $1
-	endif
-else # !Windows_NT
-	adjust_path = $1
-	adjust_path_mixed = $1
-endif
-
-PLATFORM_RELATIVE_PATH = $1
-PLATFORM_FULL_PATH = $1
 PROJECT_BUILD = $(BUILD_DIR)/app
 
 OBJECTS_DIR	= $(BUILD_DIR)/obj
@@ -42,6 +19,7 @@ LSCRIPT = $(BUILD_DIR)/bsp/linker.x
 LIB_PATHS += -L$(BUILD_DIR)/bsp
 
 CC = nios2-elf-gcc 
+SIZE = nios2-elf-size
 
 LD = nios2-elf-g++
 
@@ -99,17 +77,18 @@ CFLAGS += -I"$(BUILD_DIR)/bsp/HAL/inc/sys"			\
 
 
 PHONY += altera_run
-altera_run: all
+$(PLATFORM)_run: all
 	$(WSL) nios2-configure-sof *.sof
 	$(WSL) nios2-download -r -g $(BINARY)
 	nios2-terminal
 
-$(PROJECT_TARGET):
+$(PLATFORM)_project:
 	$(WSL) nios2-bsp hal "$(BUILD_DIR)/bsp" $(HARDWARE) --cpu-name sys_cpu
 	$(WSL) $(MAKE) CFLAGS= -C $(call adjust_path, $(BUILD_DIR)/bsp)
-	$(call set_one_time_rule,$@)
 
-post_build:
+$(PLATFORM)_post_build:
 	$(WSL) nios2-elf-insert $(BINARY) $(STAMP)
 	-$(call copy_file,sw.map,$(TEMP_DIR))
 	$(call remove_file, sw.map)
+
+$(PLATFORM)_reset:

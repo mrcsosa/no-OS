@@ -50,6 +50,9 @@
 #include "no_os_spi.h"
 #include "no_os_util.h"
 
+#include "no_os_pwm.h"
+#include "clk_axi_clkgen.h"
+
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
@@ -268,62 +271,30 @@ struct ad7606_digital_diag {
  * @struct ad7606_dev
  * @brief Device driver structure
  */
-struct ad7606_dev {
-	/** SPI descriptor*/
-	struct no_os_spi_desc *spi_desc;
-	/** RESET GPIO descriptor */
-	struct no_os_gpio_desc *gpio_reset;
-	/** CONVST GPIO descriptor */
-	struct no_os_gpio_desc *gpio_convst;
-	/** BUSY GPIO descriptor */
-	struct no_os_gpio_desc *gpio_busy;
-	/** STBYn GPIO descriptor */
-	struct no_os_gpio_desc *gpio_stby_n;
-	/** RANGE GPIO descriptor */
-	struct no_os_gpio_desc *gpio_range;
-	/** OS0 GPIO descriptor */
-	struct no_os_gpio_desc *gpio_os0;
-	/** OS1 GPIO descriptor */
-	struct no_os_gpio_desc *gpio_os1;
-	/** OS2 GPIO descriptor */
-	struct no_os_gpio_desc *gpio_os2;
-	/** PARn/SER GPIO descriptor */
-	struct no_os_gpio_desc *gpio_par_ser;
-	/** Device ID */
-	enum ad7606_device_id device_id;
-	/** Oversampling settings */
-	struct ad7606_oversampling oversampling;
-	/** Whether the device is running in hardware or software mode */
-	bool sw_mode;
-	/** Whether the device is running in register or ADC reading mode */
-	bool reg_mode;
-	/** Number of DOUT lines supported by the device */
-	enum ad7606_dout_format max_dout_lines;
-	/** Configuration register settings */
-	struct ad7606_config config;
-	/** Digital diagnostics register settings */
-	struct ad7606_digital_diag digital_diag_enable;
-	/** Number of input channels of the device */
-	uint8_t num_channels;
-	/** Channel offset calibration */
-	int8_t offset_ch[AD7606_MAX_CHANNELS];
-	/** Channel phase calibration */
-	uint8_t phase_ch[AD7606_MAX_CHANNELS];
-	/** Channel gain calibration */
-	uint8_t gain_ch[AD7606_MAX_CHANNELS];
-	/** Channel operating range */
-	struct ad7606_range range_ch[AD7606_MAX_CHANNELS];
-	/** Data buffer (used internally by the SPI communication functions) */
-	uint8_t data[28];
+struct ad7606_dev;
+
+/**
+ * @struct ad7606_axi_init_param
+ * @brief AXI driver(s) initialization parameters
+ */
+struct ad7606_axi_init_param {
+	/* Clock generator init parameters */
+	struct axi_clkgen_init *clkgen_init;
+	/* Clock generator rate */
+	uint32_t axi_clkgen_rate;
+	/* PWM generator init structure */
+	struct no_os_pwm_init_param *trigger_pwm_init;
 };
 
 /**
- * @struct ad7606_dev
+ * @struct ad7606_init_param
  * @brief Device driver initialization parameters
  */
 struct ad7606_init_param {
 	/** SPI initialization parameters */
 	struct no_os_spi_init_param spi_init;
+	/* AXI initialization parameters */
+	struct ad7606_axi_init_param *axi_init;
 	/** RESET GPIO initialization parameters */
 	struct no_os_gpio_init_param *gpio_reset;
 	/** CONVST GPIO initialization parameters */
@@ -374,8 +345,9 @@ int32_t ad7606_spi_write_mask(struct ad7606_dev *dev,
 			      uint32_t val);
 int32_t ad7606_spi_data_read(struct ad7606_dev *dev,
 			     uint32_t *data);
-int32_t ad7606_read(struct ad7606_dev *dev,
-		    uint32_t *data);
+int32_t ad7606_read_samples(struct ad7606_dev *dev,
+			    uint32_t *data,
+			    uint32_t samples);
 int32_t ad7606_convst(struct ad7606_dev *dev);
 int32_t ad7606_reset(struct ad7606_dev *dev);
 int32_t ad7606_set_oversampling(struct ad7606_dev *dev,

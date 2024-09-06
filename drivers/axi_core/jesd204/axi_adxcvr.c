@@ -51,6 +51,7 @@
 #include "xilinx_transceiver.h"
 #include "axi_adxcvr.h"
 #include "no_os_print_log.h"
+#include "no_os_clk.h"
 
 /******************************************************************************/
 /********************** Macros and Constants Definitions **********************/
@@ -71,6 +72,9 @@
 #define ADXCVR_OUTCLK_SEL(x)	(((x) & 0x7) << 0)
 
 #define ADXCVR_REG_SYNTH		0x24
+#define ADXCVR_LINK_MODE(x)		(((x) >> 12) & NO_OS_GENMASK(1, 0))
+#define ADXCVR_204B			0x01
+#define ADXCVR_204C			0x02
 
 #define ADXCVR_REG_DRP_SEL(x)		(0x0040 + (x))
 
@@ -272,23 +276,23 @@ static unsigned long adxcvr_clk_recalc_rate(struct adxcvr *xcvr,
 
 static long adxcvr_clk_round_rate(struct adxcvr *xcvr,
 				  unsigned long rate,
-				  unsigned long *prate)
+				  unsigned long parent_rate)
 {
 	int ret;
 
 	if (xcvr->ref_rate_khz % 40 == 0)
-		*prate = rate * (1000 / 40);
+		parent_rate = rate * (1000 / 40);
 
 	pr_debug("%s: Rate %lu kHz Parent Rate %lu Hz",
-		 __func__, rate, *prate);
+		 __func__, rate, parent_rate);
 
 	/* Just check if we can support the requested rate */
 	if (xcvr->cpll_enable)
-		ret = xilinx_xcvr_calc_cpll_config(&xcvr->xlx_xcvr, *prate, rate,
+		ret = xilinx_xcvr_calc_cpll_config(&xcvr->xlx_xcvr, parent_rate, rate,
 						   NULL, NULL);
 	else
 		ret = xilinx_xcvr_calc_qpll_config(&xcvr->xlx_xcvr,
-						   xcvr->sys_clk_sel, *prate, rate,	NULL, NULL);
+						   xcvr->sys_clk_sel, parent_rate, rate,	NULL, NULL);
 
 	return ret < 0 ? ret : rate;
 }
@@ -299,24 +303,6 @@ static const struct clk_ops clkout_ops = {
 	.disable = adxcvr_clk_disable,
 	.round_rate = adxcvr_clk_round_rate,
 	.set_rate = adxcvr_clk_set_rate,
-};
-
-static unsigned long adxcvr_qpll_recalc_rate(struct adxcvr *xcvr,
-		unsigned long parent_rate)
-{
-	struct xilinx_xcvr_qpll_config qpll_conf;
-
-	pr_debug("%s: Parent Rate %lu Hz", __func__, parent_rate);
-
-	xilinx_xcvr_qpll_read_config(&xcvr->xlx_xcvr,
-				     ADXCVR_DRP_PORT_COMMON(0), xcvr->sys_clk_sel, &qpll_conf);
-
-	return xilinx_xcvr_qpll_calc_lane_rate(&xcvr->xlx_xcvr,
-					       parent_rate, &qpll_conf, 1);
-}
-
-static const struct clk_ops qpll_ops = {
-	.recalc_rate = adxcvr_qpll_recalc_rate,
 };
 
 /**
@@ -582,10 +568,11 @@ static void adxcvr_get_info(struct adxcvr *xcvr)
 int32_t adxcvr_init(struct adxcvr **ad_xcvr,
 		    const struct adxcvr_init *init)
 {
-	struct adxcvr *xcvr;
+	struct no_os_clk_init_param clk_out_init;
 	uint32_t synth_conf, xcvr_type;
-	uint32_t i;
+	struct adxcvr *xcvr;
 	int32_t ret;
+	uint32_t i;
 
 	xcvr = (struct adxcvr *)no_os_calloc(1, sizeof(*xcvr));
 	if (!xcvr)
@@ -650,7 +637,10 @@ int32_t adxcvr_init(struct adxcvr **ad_xcvr,
 		goto err;
 	}
 
-	xcvr->xlx_xcvr.encoding = ENC_8B10B;
+	if (ADXCVR_LINK_MODE(synth_conf) == ADXCVR_204C)
+		xcvr->xlx_xcvr.encoding = ENC_66B64B;
+	else
+		xcvr->xlx_xcvr.encoding = ENC_8B10B;
 	xcvr->xlx_xcvr.refclk_ppm = PM_200; /* TODO use clock accuracy */
 
 	adxcvr_write(xcvr, ADXCVR_REG_RESETN, 0);
@@ -676,6 +666,15 @@ int32_t adxcvr_init(struct adxcvr **ad_xcvr,
 			goto err;
 	}
 
+	if (init->export_no_os_clk) {
+		clk_out_init.dev_desc = xcvr;
+		clk_out_init.platform_ops = &adxcvr_clk_ops;
+		clk_out_init.name = xcvr->name;
+		ret = no_os_clk_init(&xcvr->clk_out, &clk_out_init);
+		if (ret)
+			goto err;
+	}
+
 	*ad_xcvr = xcvr;
 
 	return 0;
@@ -697,3 +696,72 @@ int32_t adxcvr_remove(struct adxcvr *xcvr)
 
 	return 0;
 }
+
+/* Enable the clock. */
+int32_t adxcvr_no_os_clk_enable(struct no_os_clk_desc *desc)
+{
+	struct adxcvr *xcvr;
+
+	xcvr = desc->dev_desc;
+
+	return adxcvr_clk_enable(xcvr);
+}
+
+/* Disable the clock. */
+int32_t adxcvr_no_os_clk_disable(struct no_os_clk_desc *desc)
+{
+	struct adxcvr *xcvr;
+
+	xcvr = desc->dev_desc;
+
+	return adxcvr_clk_disable(xcvr);
+}
+
+/* Get the current frequency of the clock. */
+int32_t adxcvr_no_os_clk_recalc_rate(struct no_os_clk_desc *desc,
+				     uint64_t *rate)
+{
+	struct adxcvr *xcvr;
+
+	xcvr = desc->dev_desc;
+
+	*rate = adxcvr_clk_recalc_rate(xcvr, xcvr->ref_rate_khz);
+
+	return (*rate < 0) ? *rate : 0;
+}
+
+/* Round the desired frequency to a rate that the clock can actually output. */
+int32_t adxcvr_no_os_clk_round_rate(struct no_os_clk_desc *desc,
+				    uint64_t rate,
+				    uint64_t *rounded_rate)
+{
+	struct adxcvr *xcvr;
+
+	xcvr = desc->dev_desc;
+
+	*rounded_rate = adxcvr_clk_round_rate(xcvr, rate, xcvr->ref_rate_khz);
+
+	return (*rounded_rate < 0) ? *rounded_rate : 0;
+}
+
+/* Change the frequency of the clock. */
+int32_t adxcvr_no_os_clk_set_rate(struct no_os_clk_desc *desc,
+				  uint64_t rate)
+{
+	struct adxcvr *xcvr;
+
+	xcvr = desc->dev_desc;
+
+	return adxcvr_clk_set_rate(xcvr, rate, xcvr->ref_rate_khz);
+}
+
+/**
+ * @brief adxcvr clock ops
+ */
+const struct no_os_clk_platform_ops adxcvr_clk_ops = {
+	.clk_enable = &adxcvr_no_os_clk_enable,
+	.clk_recalc_rate =&adxcvr_no_os_clk_recalc_rate,
+	.clk_round_rate = &adxcvr_no_os_clk_round_rate,
+	.clk_set_rate = &adxcvr_no_os_clk_set_rate,
+	.clk_disable = &adxcvr_no_os_clk_disable,
+};

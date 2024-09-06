@@ -72,8 +72,11 @@ enum no_os_irq_event {
 	NO_OS_EVT_RTC,
 	NO_OS_EVT_XINT,
 	NO_OS_EVT_TIM_ELAPSED,
+	NO_OS_EVT_TIM_PWM_PULSE_FINISHED,
 	NO_OS_EVT_DMA_RX_COMPLETE,
 	NO_OS_EVT_DMA_RX_HALF_COMPLETE,
+	NO_OS_EVT_DMA_TX_COMPLETE,
+	NO_OS_EVT_USB,
 };
 
 enum no_os_irq_trig_level {
@@ -89,7 +92,11 @@ enum no_os_irq_peripheral {
 	NO_OS_UART_IRQ,
 	NO_OS_RTC_IRQ,
 	NO_OS_TIM_IRQ,
-	NO_OS_DMA_IRQ
+	NO_OS_TDM_DMA_IRQ,
+	NO_OS_TIM_DMA_IRQ,
+	NO_OS_SPI_DMA_IRQ,
+	NO_OS_DMA_IRQ,
+	NO_OS_USB_IRQ,
 };
 
 /**
@@ -124,6 +131,8 @@ struct no_os_irq_ctrl_desc {
 	uint32_t	irq_ctrl_id;
 	/** Platform specific IRQ platform ops structure. */
 	const struct no_os_irq_platform_ops *platform_ops;
+	/* Reference counter */
+	uint32_t ref;
 	/**
 	 * This is intended to store irq controller specific configurations,
 	 * it should not be a reference to any peripheral descriptor.
@@ -181,6 +190,8 @@ struct no_os_irq_platform_ops {
 				uint32_t priority_level);
 	/** IRQ remove function pointer */
 	int32_t (*remove)(struct no_os_irq_ctrl_desc *desc);
+	/** Clear pending interrupt */
+	int32_t(*clear_pending)(struct no_os_irq_ctrl_desc* desc, uint32_t irq_id);
 };
 
 /******************************************************************************/
@@ -225,4 +236,8 @@ int32_t no_os_irq_disable(struct no_os_irq_ctrl_desc *desc, uint32_t irq_id);
 int32_t no_os_irq_set_priority(struct no_os_irq_ctrl_desc *desc,
 			       uint32_t irq_id,
 			       uint32_t priority_level);
+
+/* Clear the pending interrupts */
+int32_t no_os_irq_clear_pending(struct no_os_irq_ctrl_desc* desc,
+				uint32_t irq_id);
 #endif // _NO_OS_IRQ_H_

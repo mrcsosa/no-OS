@@ -67,6 +67,18 @@ const uint8_t ad469x_device_resol[] = {
 	[AD469x_OSR_64] = 19
 };
 
+struct ad469x_device_info {
+	uint8_t max_data_ch;
+	uint32_t max_rate_ksps;
+};
+
+struct ad469x_device_info dev_info[] = {
+	[ID_AD4695] = {.max_data_ch = 16, .max_rate_ksps = 500},
+	[ID_AD4696] = {.max_data_ch = 16, .max_rate_ksps = 1000},
+	[ID_AD4697] = {.max_data_ch = 8, .max_rate_ksps = 500},
+	[ID_AD4698] = {.max_data_ch = 8, .max_rate_ksps = 1000},
+};
+
 /******************************************************************************/
 /************************** Functions Implementation **************************/
 /******************************************************************************/
@@ -257,6 +269,33 @@ static int32_t ad469x_init_gpio(struct ad469x_dev *dev,
 	return 0;
 }
 
+int32_t ad469x_get_num_channels(struct ad469x_dev *dev,
+				uint8_t *num_channels)
+{
+	if (!dev)
+		return -EINVAL;
+
+	*num_channels = dev->num_data_ch;
+	if (dev->temp_enabled)
+		*num_channels = dev->num_data_ch + 1;
+
+	return 0;
+}
+
+bool ad469x_is_temp_channel(struct ad469x_dev *dev,
+			    uint8_t channel)
+{
+	if (!dev) {
+		printf("Error: %s: null dev structure\n", __func__);
+		return false;
+	}
+
+	if ((dev->temp_enabled) && (channel == dev->num_data_ch))
+		return true;
+
+	return false;
+}
+
 /**
  * @brief Configure over sampling ratio in advanced sequencer mode
  * @param [in] dev - ad469x_dev device handler.
@@ -273,7 +312,7 @@ int32_t ad469x_adv_seq_osr(struct ad469x_dev *dev, uint16_t ch,
 	    dev->ch_sequence == AD469x_two_cycle)
 		return -1;
 
-	if (ch >= AD469x_CHANNEL_NO)
+	if (ch >= dev->num_data_ch)
 		return -1;
 
 	ret = ad469x_spi_write_mask(dev,
@@ -300,7 +339,7 @@ static int32_t ad469x_seq_osr_clear(struct ad469x_dev *dev)
 	int32_t ret;
 	uint8_t i = 0;
 
-	for (i = 0; i < AD469x_CHANNEL_NO; i++) {
+	for (i = 0; i < dev->num_data_ch; i++) {
 		ret = ad469x_spi_write_mask(dev,
 					    AD469x_REG_CONFIG_IN(i),
 					    AD469x_REG_CONFIG_IN_OSR_MASK,
@@ -695,7 +734,7 @@ int32_t ad469x_exit_conversion_mode(struct ad469x_dev *dev)
  * @return 0 in case of success, -1 otherwise.
  */
 static int32_t ad469x_adv_seq_osr_get_util_data(struct ad469x_dev *dev,
-		uint16_t cur_sample, uint32_t *sample)
+		uint32_t cur_sample, uint32_t *sample)
 {
 	uint8_t cur_slot, cur_ch;
 
@@ -725,10 +764,10 @@ static int32_t ad469x_adv_seq_osr_get_util_data(struct ad469x_dev *dev,
  */
 int32_t ad469x_seq_read_data(struct ad469x_dev *dev,
 			     uint32_t *buf,
-			     uint16_t samples)
+			     uint32_t samples)
 {
 	int32_t ret;
-	uint16_t i;
+	uint32_t i;
 	uint32_t total_samples;
 
 	total_samples = samples * (dev->num_slots + dev->temp_enabled);
@@ -772,9 +811,9 @@ int32_t ad469x_read_data(struct ad469x_dev *dev,
 		WRITE_READ(1),
 		CS_HIGH
 	};
-	if (channel < AD469x_CHANNEL_NO)
+	if (channel < dev->num_data_ch)
 		commands_data[0] = AD469x_CMD_CONFIG_CH_SEL(channel) << 8;
-	else if (channel == AD469x_CHANNEL_TEMP)
+	else if (channel == dev->num_data_ch)
 		commands_data[0] = AD469x_CMD_SEL_TEMP_SNSOR_CH << 8;
 	else
 		return -1;
@@ -790,7 +829,7 @@ int32_t ad469x_read_data(struct ad469x_dev *dev,
 	msg.rx_addr = (uint32_t)buf;
 	msg.commands_data = commands_data;
 
-	ret = spi_engine_offload_transfer(dev->spi_desc, msg, samples * 2);
+	ret = spi_engine_offload_transfer(dev->spi_desc, msg, samples);
 	if (ret != 0)
 		return ret;
 
@@ -838,6 +877,45 @@ int32_t ad469x_reset_dev(struct ad469x_dev *dev)
 }
 
 /**
+ * @brief Get the value of reference
+ * @param device AD469x Device instance.
+ * @param ref_set Value of VREF_SET
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int32_t ad469x_get_reference(struct ad469x_dev *device,
+			     enum ad469x_ref_set *ref_set)
+{
+	int32_t ret;
+	uint8_t reg_data;
+
+	if (!device)
+		return -EINVAL;
+
+	ret = ad469x_spi_reg_read(device, AD469x_REG_REF_CTRL, &reg_data);
+	if (ret)
+		return ret;
+
+	*ref_set = no_os_field_get(AD469x_REG_REF_VREF_SET_MASK, reg_data);
+
+	return 0;
+}
+
+/**
+ * @brief Set the value of reference
+ * @param device AD469x Device instance.
+ * @param ref_set Value of VREF_SET
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int32_t ad469x_set_reference(struct ad469x_dev *device,
+			     enum ad469x_ref_set ref_set)
+{
+	return ad469x_spi_write_mask(device,
+				     AD469x_REG_REF_CTRL,
+				     AD469x_REG_REF_VREF_SET_MASK,
+				     no_os_field_prep(AD469x_REG_REF_VREF_SET_MASK, ref_set));
+}
+
+/**
  * Configure the device with initial parameters.
  * @param [in, out] dev - The device structure.
  * @param [in] config_desc - Pointer to structure containing configuration
@@ -865,9 +943,120 @@ int32_t ad469x_config(struct ad469x_dev *dev, struct
 	if (ret != 0)
 		return ret;
 
+	if (config_desc->temp_enabled) {
+		ret = ad469x_sequence_enable_temp(dev);
+		if (ret != 0)
+			return ret;
+	}
+
 	ret = ad469x_set_channel_sequence(dev, config_desc->ch_sequence);
 	if (ret != 0)
 		return ret;
+
+	return 0;
+}
+
+/**
+ * Configure the device with default parameters and enter conversion mode
+ * this adds default ch/slot assigments based on sequece mode.
+ * @param [in, out] dev - The device structure.
+ * @param [in] config_desc - Pointer to structure containing configuration
+ *                           parameters.
+ * @return 0 in case of success, negative error code otherwise.
+ */
+int32_t ad469x_config_extended(struct ad469x_dev *dev, struct
+			       ad469x_init_param *config_desc)
+{
+	int32_t ret, i;
+	uint32_t ch_mask = NO_OS_GENMASK(config_desc->num_data_ch - 1, 0);
+
+	ret = ad469x_set_reg_access_mode(dev, AD469x_BYTE_ACCESS);
+	if (ret != 0)
+		return ret;
+
+	ret = ad469x_set_busy(dev, AD469x_busy_gp0);
+	if (ret != 0)
+		return ret;
+
+	if (config_desc->ch_sequence == AD469x_advanced_seq) {
+		ret = ad469x_adv_sequence_set_num_slots(dev, dev->num_data_ch);
+		if (ret)
+			return ret;
+
+		for (i = 0; i < config_desc->num_data_ch; i++) {
+			ret = ad469x_adv_sequence_set_slot(dev, i, i);
+			if (ret)
+				return ret;
+
+			ret = ad469x_adv_seq_osr(dev, i, config_desc->adv_seq_osr_resol[i]);
+			if (ret)
+				return ret;
+
+		}
+	} else if(config_desc->ch_sequence == AD469x_standard_seq)  {
+		ret = ad469x_std_sequence_ch(dev, ch_mask);
+		if (ret)
+			return ret;
+
+		ret = ad469x_std_seq_osr(dev, config_desc->std_seq_osr);
+		if (ret != 0)
+			return ret;
+	}
+
+	ret = ad469x_std_pin_pairing(dev, config_desc->std_seq_pin_pairing);
+	if (ret != 0)
+		return ret;
+
+	if (config_desc->temp_enabled) {
+		ret = ad469x_sequence_enable_temp(dev);
+		if (ret != 0)
+			return ret;
+	}
+
+	ret = ad469x_set_channel_sequence(dev, config_desc->ch_sequence);
+	if (ret != 0)
+		return ret;
+
+	return ad469x_enter_conversion_mode(dev);
+}
+
+/**
+ * @brief Configure analog input high Z mode
+ * @param dev The device structure
+ * @param ch Channel ID
+ * @param status Status of analog input high Z bit
+ * @return 0 in case of success, negative error code otherwise
+ */
+int32_t ad469x_configure_ain_high_z(struct ad469x_dev *dev, uint8_t ch,
+				    enum ad469x_ain_high_z status)
+{
+	return ad469x_spi_write_mask(dev,
+				     AD469x_REG_CONFIG_IN(dev->ch_sequence == AD469x_standard_seq ? 0 : ch),
+				     AD469x_REG_CONFIG_IN_HIZ_EN_MASK,
+				     AD469x_REG_CONFIG_IN_HIZ_EN(status));
+}
+
+/**
+ * @brief Get the status of analog input high Z mode
+ * @param dev The device structure
+ * @param ch Channel ID
+ * @param status Status of analog input high Z bit
+ * @return 0 in case of success, negative error code otherwise
+ */
+int32_t ad469x_get_ain_high_z_status(struct ad469x_dev *dev,
+				     uint8_t ch,
+				     enum ad469x_ain_high_z *status)
+{
+	uint8_t reg_data;
+	int32_t ret;
+
+	ret = ad469x_spi_reg_read(dev,
+				  AD469x_REG_CONFIG_IN(dev->ch_sequence == AD469x_standard_seq ? 0 : ch),
+				  &reg_data);
+	if (ret)
+		return ret;
+
+	*status = no_os_field_get(AD469x_REG_CONFIG_IN_HIZ_EN_MASK, reg_data);
 
 	return 0;
 }
@@ -885,6 +1074,8 @@ int32_t ad469x_init(struct ad469x_dev **device,
 	struct ad469x_dev *dev;
 	int32_t ret;
 	uint8_t data = 0;
+	uint8_t max_data_ch;
+	uint32_t sample_frequncy_ksps;
 
 	dev = (struct ad469x_dev *)no_os_malloc(sizeof(*dev));
 	if (!dev)
@@ -914,10 +1105,6 @@ int32_t ad469x_init(struct ad469x_dev **device,
 	if (ret != 0)
 		goto error_gpio;
 
-	ret = ad469x_reset_dev(dev);
-	if (ret != 0)
-		goto error_spi;
-
 #if !defined(USE_STANDARD_SPI)
 	dev->offload_init_param = init_param->offload_init_param;
 	dev->reg_access_speed = init_param->reg_access_speed;
@@ -925,6 +1112,19 @@ int32_t ad469x_init(struct ad469x_dev **device,
 	dev->capture_data_width = init_param->capture_data_width;
 #endif
 	dev->dev_id = init_param->dev_id;
+
+	max_data_ch = dev_info[dev->dev_id].max_data_ch;
+	if (init_param->num_data_ch > max_data_ch) {
+		printf("Error: too many channels(%d). Max (%d)\n",
+		       init_param->num_data_ch, max_data_ch);
+		ret = -EINVAL;
+		goto error_spi;
+	} else if(init_param->num_data_ch == 0) {
+		dev->num_data_ch = max_data_ch;
+	} else {
+		dev->num_data_ch = init_param->num_data_ch;
+	}
+
 	dev->dcache_invalidate_range = init_param->dcache_invalidate_range;
 	dev->std_seq_osr = init_param->std_seq_osr;
 	dev->std_seq_pin_pairing = init_param->std_seq_pin_pairing;
@@ -932,6 +1132,10 @@ int32_t ad469x_init(struct ad469x_dev **device,
 	dev->num_slots = 0;
 	dev->temp_enabled = false;
 	memset(dev->ch_slots, 0, sizeof(dev->ch_slots));
+
+	ret = ad469x_reset_dev(dev);
+	if (ret != 0)
+		goto error_spi;
 
 	ret = ad469x_spi_reg_write(dev, AD469x_REG_SCRATCH_PAD, AD469x_TEST_DATA);
 	if (ret != 0)
@@ -944,11 +1148,25 @@ int32_t ad469x_init(struct ad469x_dev **device,
 	if (data != AD469x_TEST_DATA)
 		goto error_spi;
 
-	ret = ad469x_config(dev, init_param);
-	if (ret != 0)
-		goto error_spi;
+	if (init_param->enable_extended_init) {
+		ret = ad469x_config_extended(dev, init_param);
+		if (ret != 0)
+			goto error_spi;
+	} else {
+		ret = ad469x_config(dev, init_param);
+		if (ret != 0)
+			goto error_spi;
+	}
 
 #if !defined(USE_STANDARD_SPI)
+	sample_frequncy_ksps = NO_OS_DIV_ROUND_UP(1000000,
+			       init_param->trigger_pwm_init->period_ns);
+	if (sample_frequncy_ksps > dev_info[dev->dev_id].max_rate_ksps) {
+		printf("Error: Sample frequency too high (%ld)\n", sample_frequncy_ksps);
+		ret = -EINVAL;
+		goto error_spi;
+	}
+
 	ret = no_os_pwm_init(&dev->trigger_pwm_desc, init_param->trigger_pwm_init);
 	if (ret != 0)
 		goto error_spi;

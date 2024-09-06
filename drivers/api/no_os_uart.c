@@ -41,6 +41,13 @@
 #include "no_os_uart.h"
 #include <stdlib.h>
 #include "no_os_error.h"
+#include "no_os_mutex.h"
+#include "no_os_util.h"
+
+/**
+ * @brief - UART mutex
+*/
+static void *uart_mutex_table[UART_MAX_NUMBER + 1];
 
 /**
  * @brief Initialize the UART communication peripheral.
@@ -53,7 +60,8 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 {
 	int32_t ret;
 
-	if (!param || !param->platform_ops)
+	if (!param || !param->platform_ops
+	    || param->device_id >= NO_OS_ARRAY_SIZE(uart_mutex_table))
 		return -EINVAL;
 
 	if (!param->platform_ops->init)
@@ -64,6 +72,9 @@ int32_t no_os_uart_init(struct no_os_uart_desc **desc,
 		return ret;
 
 	(*desc)->platform_ops = param->platform_ops;
+
+	no_os_mutex_init(&(uart_mutex_table[param->device_id]));
+	(*desc)-> mutex = uart_mutex_table[param->device_id];
 
 	return 0;
 }
@@ -80,6 +91,9 @@ int32_t no_os_uart_remove(struct no_os_uart_desc *desc)
 
 	if (!desc->platform_ops->remove)
 		return -ENOSYS;
+
+	no_os_mutex_remove(desc->mutex);
+	uart_mutex_table[desc->device_id] = NULL;
 
 	return desc->platform_ops->remove(desc);
 }
@@ -111,13 +125,19 @@ int32_t no_os_uart_read(struct no_os_uart_desc *desc,
 			uint8_t *data,
 			uint32_t bytes_number)
 {
+	int32_t ret;
+
 	if (!desc || !desc->platform_ops || !data)
 		return -EINVAL;
 
 	if (!desc->platform_ops->read)
 		return -ENOSYS;
 
-	return desc->platform_ops->read(desc, data, bytes_number);
+	no_os_mutex_lock(desc->mutex);
+	ret = desc->platform_ops->read(desc, data, bytes_number);
+	no_os_mutex_unlock(desc->mutex);
+
+	return ret;
 }
 
 /**
@@ -131,13 +151,19 @@ int32_t no_os_uart_write(struct no_os_uart_desc *desc,
 			 const uint8_t *data,
 			 uint32_t bytes_number)
 {
+	int32_t ret;
+
 	if (!desc || !desc->platform_ops || !data)
 		return -EINVAL;
 
 	if (!desc->platform_ops->write)
 		return -ENOSYS;
 
-	return desc->platform_ops->write(desc, data, bytes_number);
+	no_os_mutex_lock(desc->mutex);
+	ret = desc->platform_ops->write(desc, data, bytes_number);
+	no_os_mutex_unlock(desc->mutex);
+
+	return ret;
 }
 
 /**
@@ -151,13 +177,19 @@ int32_t no_os_uart_read_nonblocking(struct no_os_uart_desc *desc,
 				    uint8_t *data,
 				    uint32_t bytes_number)
 {
+	int32_t ret;
+
 	if (!desc || !desc->platform_ops || !data)
 		return -EINVAL;
 
 	if (!desc->platform_ops->read_nonblocking)
 		return -ENOSYS;
 
-	return desc->platform_ops->read_nonblocking(desc, data, bytes_number);
+	no_os_mutex_lock(desc->mutex);
+	ret = desc->platform_ops->read_nonblocking(desc, data, bytes_number);
+	no_os_mutex_unlock(desc->mutex);
+
+	return ret;
 }
 
 /**
@@ -171,13 +203,19 @@ int32_t no_os_uart_write_nonblocking(struct no_os_uart_desc *desc,
 				     const uint8_t *data,
 				     uint32_t bytes_number)
 {
+	int32_t ret;
+
 	if (!desc || !desc->platform_ops || !data)
 		return -EINVAL;
 
 	if (!desc->platform_ops->write_nonblocking)
 		return -ENOSYS;
 
-	return desc->platform_ops->write_nonblocking(desc, data, bytes_number);
+	no_os_mutex_lock(desc->mutex);
+	ret = desc->platform_ops->write_nonblocking(desc, data, bytes_number);
+	no_os_mutex_unlock(desc->mutex);
+
+	return ret;
 }
 
 

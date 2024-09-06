@@ -43,6 +43,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include "no_os_clk.h"
 #include "no_os_error.h"
 #include "no_os_util.h"
 #include "no_os_alloc.h"
@@ -460,6 +461,10 @@ int32_t axi_jesd204_tx_apply_config(struct axi_jesd204_tx *jesd,
 		}
 	}
 
+	if (config->sysref.lmfc_offset != JESD204_LMFC_OFFSET_UNINITIALIZED)
+		axi_jesd204_tx_write(jesd, JESD204_TX_REG_SYSREF_LMFC_OFFSET,
+				     config->sysref.lmfc_offset);
+
 	return 0;
 }
 
@@ -572,6 +577,16 @@ static int axi_jesd204_tx_jesd204_link_pre_setup(struct jesd204_dev *jdev,
 	pr_debug("%s: Link%u set lane rate %lu kHz\n",
 		 __func__, lnk->link_id, lane_rate);
 
+	ret = no_os_clk_set_rate(jesd->lane_clk, lane_rate);
+	if (ret) {
+		pr_err("%s: Link%u set lane rate %lu kHz failed (%d)\n",
+		       __func__, lnk->link_id, lane_rate, ret);
+		return ret;
+	} else {
+		pr_debug("%s: Link%u set lane rate %lu kHz\n",
+			 __func__, lnk->link_id, lane_rate);
+	}
+
 	return JESD204_STATE_CHANGE_DONE;
 }
 
@@ -606,6 +621,14 @@ static int axi_jesd204_tx_jesd204_link_setup(struct jesd204_dev *jdev,
 		       __func__, lnk->link_id, ret);
 		return ret;
 	}
+
+	ret = no_os_clk_enable(jesd->lane_clk);
+	if (ret) {
+		pr_err("%s: Link%u enable lane clock failed (%d)\n",
+		       __func__, lnk->link_id, ret);
+		return ret;
+	}
+
 	return JESD204_STATE_CHANGE_DONE;
 }
 
@@ -709,8 +732,8 @@ static const struct jesd204_dev_data jesd204_axi_jesd204_tx_init = {
  * @param init - The structure containing the device initial parameters.
  * @return Returns 0 in case of success or negative error code otherwise.
  */
-int32_t axi_jesd204_tx_init(struct axi_jesd204_tx **jesd204,
-			    const struct jesd204_tx_init *init)
+int32_t axi_jesd204_tx_init_legacy(struct axi_jesd204_tx **jesd204,
+				   const struct jesd204_tx_init *init)
 {
 	struct axi_jesd204_tx *jesd;
 	uint32_t synth_1;
@@ -799,8 +822,8 @@ err:
  * @param init - The structure containing the device initial parameters.
  * @return Returns 0 in case of success or negative error code otherwise.
  */
-int32_t axi_jesd204_tx_init_jesd_fsm(struct axi_jesd204_tx **jesd204,
-				     const struct jesd204_tx_init *init)
+int32_t axi_jesd204_tx_init(struct axi_jesd204_tx **jesd204,
+			    const struct jesd204_tx_init *init)
 {
 	struct axi_jesd204_tx_jesd204_priv *priv;
 	struct axi_jesd204_tx *jesd;
@@ -808,7 +831,7 @@ int32_t axi_jesd204_tx_init_jesd_fsm(struct axi_jesd204_tx **jesd204,
 	uint32_t magic;
 	uint32_t version;
 	uint32_t tmp;
-	int ret;
+	int ret = -ENODEV;
 
 	jesd = (struct axi_jesd204_tx *)no_os_calloc(1, sizeof(*jesd));
 	if (!jesd)
@@ -850,6 +873,25 @@ int32_t axi_jesd204_tx_init_jesd_fsm(struct axi_jesd204_tx **jesd204,
 		jesd->encoder = JESD204_ENCODER_8B10B;
 	else if (jesd->encoder >= JESD204_ENCODER_MAX)
 		goto err;
+
+	jesd->config.version = version;
+	jesd->config.device_id = 0;
+	jesd->config.bank_id = 0;
+	jesd->config.enable_scrambling = true;
+	jesd->config.lanes_per_device = jesd->num_lanes;
+	jesd->config.jesd_version = 1;
+	jesd->config.samples_per_frame = 1;
+
+	jesd->config.octets_per_frame = init->octets_per_frame;
+	jesd->config.frames_per_multiframe = init->frames_per_multiframe;
+	jesd->config.converters_per_device = init->converters_per_device;
+	jesd->config.resolution = init->converter_resolution;
+	jesd->config.bits_per_sample = init->bits_per_sample;
+	jesd->config.high_density = init->high_density;
+	jesd->config.control_bits_per_sample = init->control_bits_per_sample;
+	jesd->config.subclass_version = init->subclass;
+
+	jesd->lane_clk = init->lane_clk;
 
 	ret = jesd204_dev_register(&jesd->jdev, &jesd204_axi_jesd204_tx_init);
 	if (ret)

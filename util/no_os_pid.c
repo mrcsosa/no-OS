@@ -154,6 +154,42 @@ end:
 }
 
 /**
+ * @brief Change the hysteresis.
+ * @param pid - PID descriptor created with no_os_pid_init()
+ * @param hyst - The new hysteresis value
+ * @return
+ *  - 0 : On success
+ *  - -EINVAL : Invalid input
+ */
+int no_os_pid_hysteresis(struct no_os_pid *pid, unsigned int hyst)
+{
+	if (!pid)
+		return -EINVAL;
+
+	pid->config.hysteresis = hyst;
+
+	return 0;
+}
+
+/**
+ * @brief Reset internal accumulators, useful when the same pid descriptor is used to start over.
+ * @param pid - PID descriptor created with no_os_pid_init()
+ * @return
+ *  - 0 : On success
+ *  - -EINVAL : Invalid input
+ */
+int no_os_pid_reset(struct no_os_pid *pid)
+{
+	if (!pid)
+		return -EINVAL;
+
+	pid->iacc = 0;
+	pid->dacc = 0;
+
+	return 0;
+}
+
+/**
  * @brief De-initialize a PID controller by freeing the allocated memory
  * @param pid - PID descriptor created with no_os_pid_init()
  * @return
