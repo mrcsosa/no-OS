@@ -6,38 +6,30 @@
 *******************************************************************************
 * Copyright 2021(c) Analog Devices, Inc.
 *
-* All rights reserved.
-*
 * Redistribution and use in source and binary forms, with or without
-* modification,
-* are permitted provided that the following conditions are met:
-*  - Redistributions of source code must retain the above copyright
-*    notice, this list of conditions and the following disclaimer.
-*  - Redistributions in binary form must reproduce the above copyright
-*    notice, this list of conditions and the following disclaimer in
-*    the documentation and/or other materials provided with the
-*    distribution.
-*  - Neither the name of Analog Devices, Inc. nor the names of its
-*    contributors may be used to endorse or promote products derived
-*    from this software without specific prior written permission.
-*  - The use of this software may or may not infringe the patent rights
-*    of one or more patent holders.  This license does not release you
-*    from the requirement that you obtain separate licenses from these
-*    patent holders to use this software.
-*  - Use of the software either in source or binary form, must be run
-*    on or directly connected to an Analog Devices Inc. component.
+* modification, are permitted provided that the following conditions are met:
 *
-* THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
-* IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
-* MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
-* IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
-* INCIDENTAL,SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-* * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS
-* OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
-* HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-* LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-* OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
-* DAMAGE.
+* 1. Redistributions of source code must retain the above copyright notice,
+*    this list of conditions and the following disclaimer.
+*
+* 2. Redistributions in binary form must reproduce the above copyright notice,
+*    this list of conditions and the following disclaimer in the documentation
+*    and/or other materials provided with the distribution.
+*
+* 3. Neither the name of Analog Devices, Inc. nor the names of its
+*    contributors may be used to endorse or promote products derived from this
+*    software without specific prior written permission.
+*
+* THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES, INC. “AS IS” AND ANY EXPRESS OR
+* IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+* MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+* EVENT SHALL ANALOG DEVICES, INC. BE LIABLE FOR ANY DIRECT, INDIRECT,
+* INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+* LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+* OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+* LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+* NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+* EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ******************************************************************************/
 
 #ifndef _AD3552R_H_
@@ -400,12 +392,17 @@ struct ad3552r_desc {
 	struct no_os_spi_desc *spi;
 	struct no_os_gpio_desc *ldac;
 	struct no_os_gpio_desc *reset;
+	struct axi_clkgen *clkgen;
+	struct axi_dac  *ad3552r_core_ip;
+	struct axi_dmac *dmac_ip;
 	struct ad3552r_ch_data ch_data[AD3552R_MAX_NUM_CH];
+	uint8_t axi_xfer_size;
 	uint8_t crc_table[NO_OS_CRC8_TABLE_SIZE];
 	uint8_t chip_id;
 	uint8_t crc_en : 1;
 	uint8_t is_simultaneous : 1;
 	uint8_t single_transfer : 1;
+	uint8_t axi: 1;
 };
 
 struct ad3552r_custom_output_range_cfg {
@@ -451,6 +448,16 @@ struct ad3552r_init_param {
 	bool crc_en;
 	bool is_simultaneous;
 	bool single_transfer;
+	/* Set for AXI qspi controller in use */
+	bool axi_qspi_controller;
+	/* Set AXI clock rate */
+	int axi_clkgen_rate;
+	/* Points to struct axi_clkgen_init for clkgen ip init params */
+	struct axi_clkgen_init *clkgen_ip;
+	/* Points to struct axi_dac_init for AXI ip init params */
+	struct axi_dac_init *ad3552r_core_ip;
+	/* Points to struct axi_dmac_init for AXI DMAC init params */
+	struct axi_dmac_init *dmac_ip;
 };
 
 /*****************************************************************************/
@@ -517,4 +524,9 @@ int32_t ad3552r_write_samples(struct ad3552r_desc *desc, uint16_t *data,
 			      enum ad3552r_write_mode mode);
 
 int32_t ad3552r_simulatneous_update_enable(struct ad3552r_desc *desc);
+
+/* DMA buffering, fast mode, AXI QSPI */
+int32_t ad3552r_axi_write_data(struct ad3552r_desc *desc, uint32_t *buf,
+			       uint16_t samples, bool cyclic, int cyclic_secs);
+
 #endif /* _AD3552R_H_ */

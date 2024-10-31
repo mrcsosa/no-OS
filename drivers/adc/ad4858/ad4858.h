@@ -3,36 +3,30 @@
  *   @brief  Header file for the ad4858 drivers
 ********************************************************************************
  * Copyright 2023(c) Analog Devices, Inc.
- * All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  - Neither the name of Analog Devices, Inc. nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *  - The use of this software may or may not infringe the patent rights
- *    of one or more patent holders.  This license does not release you
- *    from the requirement that you obtain separate licenses from these
- *    patent holders to use this software.
- *  - Use of the software either in source or binary form, must be run
- *    on or directly connected to an Analog Devices Inc. component.
  *
- * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of Analog Devices, Inc. nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES, INC. “AS IS” AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL ANALOG DEVICES, INC. BE LIABLE FOR ANY DIRECT, INDIRECT,
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 #ifndef AD4858_H_
 #define AD4858_H_
@@ -130,8 +124,16 @@
 
 /** Miscellaneous Definitions */
 #define AD4858_REG_RD_BIT_MSK       NO_OS_BIT(7)
-#define AD4858_PRODUCT_ID_L         0x60
-#define AD4858_PRODUCT_ID_H         0x00
+#define AD4858_PRODUCT_ID_L		0x60
+#define AD4857_PRODUCT_ID_L		0x61
+#define AD4856_PRODUCT_ID_L		0x62
+#define AD4855_PRODUCT_ID_L		0x63
+#define AD4854_PRODUCT_ID_L		0x64
+#define AD4853_PRODUCT_ID_L		0x65
+#define AD4852_PRODUCT_ID_L		0x66
+#define AD4851_PRODUCT_ID_L		0x67
+#define AD4858I_PRODUCT_ID_L		0x6F
+#define AD485X_PRODUCT_ID_H         0x00
 #define AD4858_NUM_CHANNELS         8
 #define AD4858_DEF_CHN_SOFTSPAN     0xf
 #define AD4858_DEF_CHN_OFFSET       0x0
@@ -139,6 +141,22 @@
 #define AD4858_DEF_CHN_PHASE        0x0
 #define AD4858_DEF_CHN_OR           0x7ffff0
 #define AD4858_DEF_CHN_UR           0x800000
+
+/**
+ * @enum ad4858_prod_id
+ * @brief AD485X Product ID
+ */
+enum ad4858_prod_id {
+	AD4858_PROD_ID_L=0x60,
+	AD4857_PROD_ID_L=0x61,
+	AD4856_PROD_ID_L=0x62,
+	AD4855_PROD_ID_L=0x63,
+	AD4854_PROD_ID_L=0x64,
+	AD4853_PROD_ID_L=0x65,
+	AD4852_PROD_ID_L=0x66,
+	AD4851_PROD_ID_L=0x67,
+	AD4858I_PROD_ID_L=0x6F,
+};
 
 /**
  * @enum ad4858_operating_mode
@@ -277,6 +295,8 @@ struct ad4858_init_param {
 	struct no_os_gpio_init_param *gpio_cnv;
 	/** Busy GPIO configuration. */
 	struct no_os_gpio_init_param *gpio_busy;
+	/** AD458X Product ID */
+	enum ad4858_prod_id prod_id;
 	/** Enable address ascension. */
 	bool addr_ascension_enable;
 	/** Operating mode. */
@@ -324,6 +344,8 @@ struct ad4858_dev {
 	struct no_os_gpio_desc *gpio_cnv;
 	/** Busy GPIO descriptor. */
 	struct no_os_gpio_desc *gpio_busy;
+	/** AD458X Product ID */
+	enum ad4858_prod_id prod_id;
 	/** Address ascension enable status. */
 	bool addr_ascension_enable;
 	/** Operating mode. */

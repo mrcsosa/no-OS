@@ -19,7 +19,7 @@ ANALOG TO DIGITAL CONVERTERS
    drivers/adm1177
    drivers/ad405x
    drivers/ad796x
-   drivers/ad400x
+   drivers/pulsar_adc
 
 AXI CORES
 =========
@@ -45,7 +45,7 @@ DIGITAL TO ANALOG CONVERTERS
 .. toctree::
    :maxdepth: 1
 
-   drivers/max2201x
+   drivers/max22017
 
 FREQUENCY GENERATORS
 ====================
@@ -61,12 +61,34 @@ INERTIAL MEASUREMENT UNITS
 
    drivers/imu
 
+LED
+===
+.. toctree::
+   :maxdepth: 1
+
+   drivers/max25603
+
+METER
+=====
+.. toctree::
+   :maxdepth: 1
+
+   drivers/ade7816
+
 RF TRANSCEIVER
 ==============
 .. toctree::
    :maxdepth: 1
 
    drivers/madura
+
+TEMPERATURE
+==============
+.. toctree::
+   :maxdepth: 1
+
+   drivers/max31827
+   drivers/ltc2983
 
 POWER MANAGEMENT
 ================
@@ -76,5 +98,9 @@ POWER MANAGEMENT
    drivers/adp1050
    drivers/ltc2992
    drivers/ltc4296
+   drivers/lt7170
    drivers/lt7182s
+   drivers/lt8491
    drivers/lt8722
+   drivers/ltp8800
+   drivers/max42500

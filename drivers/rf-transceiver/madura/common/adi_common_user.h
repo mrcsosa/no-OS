@@ -1,5 +1,4 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/**
+/*/**
 * \file adi_common_user.h
 *
 * User modifiable defines
@@ -27,7 +26,7 @@ extern "C" {
 #endif
 
 #ifndef ADI_COMMON_HAL_SPIARRAYSIZE
-    #define ADI_COMMON_HAL_SPIARRAYSIZE 256
+    #define ADI_COMMON_HAL_SPIARRAYSIZE 16
 #endif
 
 #ifdef __cplusplus

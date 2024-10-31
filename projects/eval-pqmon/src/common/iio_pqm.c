@@ -5,36 +5,30 @@
  ********************************************************************************
  * Copyright (c) 2024 Analog Devices, Inc.
  *
- * All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  - Neither the name of Analog Devices, Inc. nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *  - The use of this software may or may not infringe the patent rights
- *    of one or more patent holders.  This license does not release you
- *    from the requirement that you obtain separate licenses from these
- *    patent holders to use this software.
- *  - Use of the software either in source or binary form, must be run
- *    on or directly connected to an Analog Devices Inc. component.
  *
- * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of Analog Devices, Inc. nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES, INC. “AS IS” AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL ANALOG DEVICES, INC. BE LIABLE FOR ANY DIRECT, INDIRECT,
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *******************************************************************************/
 
 /******************************************************************************/
@@ -299,8 +293,20 @@ int write_pqm_attr(void *device, char *buf, uint32_t len,
 			configChanged = false;
 			if (!strcmp (buf, "1"))
 				processData = true;
-			else
+			else {
 				processData = false;
+				// Empty waveform iio buffer
+				int tmp_ret;
+				uint8_t tmp_buff[ADI_PQLIB_WAVEFORM_BLOCK_SIZE
+						 * ADI_PQLIB_TOTAL_WAVEFORM_CHANNELS
+						 * sizeof (uint16_t)];
+				do {
+					tmp_ret = no_os_cb_read(pqlibExample.no_os_cb_desc,tmp_buff,
+								ADI_PQLIB_WAVEFORM_BLOCK_SIZE
+								* ADI_PQLIB_TOTAL_WAVEFORM_CHANNELS
+								* sizeof (uint16_t));
+				} while(!tmp_ret);
+			}
 		default:
 			desc->pqm_global_attr[attr_id] = value;
 		}
@@ -358,8 +364,8 @@ int read_ch_attr(void *device, char *buf, uint32_t len,
 
 		case CHAN_HARMONICS:
 			strcpy(buf, "");
-			// Adding fundamental waveform, 100% always
-			sprintf(buffTmp, "%f", 100.0f);
+			// Adding fundamental waveform, 0% & 100% always
+			sprintf(buffTmp, "%f %f", 0.0f, 100.0f);
 			strcat(buf, buffTmp);
 			strcat(buf, " ");
 
@@ -376,8 +382,8 @@ int read_ch_attr(void *device, char *buf, uint32_t len,
 
 		case CHAN_INTER_HARMONICS:
 			strcpy(buf, "");
-			// Adding fundamental waveform, 100% always
-			sprintf(buffTmp, "%f", 100.0f);
+			// Adding fundamental waveform, 0% & 100% always
+			sprintf(buffTmp, "%f %f", 0.0f, 100.0f);
 			strcat(buf, buffTmp);
 			strcat(buf, " ");
 
@@ -393,7 +399,7 @@ int read_ch_attr(void *device, char *buf, uint32_t len,
 			return strlen(buf);
 
 		case CHAN_SCALE:
-			return snprintf(buf, len, "%.2f",
+			return snprintf(buf, len, "%.5f",
 					(pqlibExample.exampleConfig.voltageScale /
 					 ((float)(RESAMPLED_WAVEFORM_FULL_SCALE))));
 
@@ -454,15 +460,15 @@ int read_ch_attr(void *device, char *buf, uint32_t len,
 
 		case CHAN_HARMONICS:
 			strcpy(buf, "");
-			// Adding fundamental waveform, 100% always
-			sprintf(buffTmp, "%f", 100.0f);
+			// Adding fundamental waveform, 0% & 100% always
+			sprintf(buffTmp, "%f %f", 0.0f, 100.0f);
 			strcat(buf, buffTmp);
 			strcat(buf, " ");
 
 			for (int i = 0; i < PQLIB_MAX_HARMONICS - 1; i++) {
 				sprintf(buffTmp, "%f",
 					convert_pct_type(pqlibExample.output->params1012Cycles
-							 .voltageParams[channel->ch_num]
+							 .currentParams[channel->ch_num]
 							 .harmonics[i]));
 				strcat(buf, buffTmp);
 				if (i != PQLIB_MAX_HARMONICS - 1)
@@ -472,15 +478,15 @@ int read_ch_attr(void *device, char *buf, uint32_t len,
 
 		case CHAN_INTER_HARMONICS:
 			strcpy(buf, "");
-			// Adding fundamental waveform, 100% always
-			sprintf(buffTmp, "%f", 100.0f);
+			// Adding fundamental waveform, 0% & 100% always
+			sprintf(buffTmp, "%f %f", 0.0f, 100.0f);
 			strcat(buf, buffTmp);
 			strcat(buf, " ");
 
 			for (int i = 0; i < PQLIB_MAX_INTER_HARMONICS - 1; i++) {
 				sprintf(buffTmp, "%f",
 					convert_pct_type(pqlibExample.output->params1012Cycles
-							 .voltageParams[channel->ch_num]
+							 .currentParams[channel->ch_num]
 							 .interHarmonics[i]));
 				strcat(buf, buffTmp);
 				if (i != PQLIB_MAX_INTER_HARMONICS - 1)
@@ -488,7 +494,7 @@ int read_ch_attr(void *device, char *buf, uint32_t len,
 			}
 			return strlen(buf);
 		case CHAN_SCALE:
-			return snprintf(buf, len, "%.2f",
+			return snprintf(buf, len, "%.5f",
 					(pqlibExample.exampleConfig.currentScale /
 					 (float)(RESAMPLED_WAVEFORM_FULL_SCALE)));
 

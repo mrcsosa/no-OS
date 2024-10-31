@@ -5,36 +5,30 @@
 ********************************************************************************
  * Copyright 2023(c) Analog Devices, Inc.
  *
- * All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  - Neither the name of Analog Devices, Inc. nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *  - The use of this software may or may not infringe the patent rights
- *    of one or more patent holders.  This license does not release you
- *    from the requirement that you obtain separate licenses from these
- *    patent holders to use this software.
- *  - Use of the software either in source or binary form, must be run
- *    on or directly connected to an Analog Devices Inc. component.
  *
- * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of Analog Devices, Inc. nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES, INC. “AS IS” AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL ANALOG DEVICES, INC. BE LIABLE FOR ANY DIRECT, INDIRECT,
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
 
 /******************************************************************************/
@@ -68,9 +62,9 @@
 #include "adrv9025.h"
 #include "ad9528.h"
 
-uint32_t dac_buffer_dma[DAC_BUFFER_SAMPLES] __attribute__ ((aligned));
+uint32_t dac_buffer_dma[DAC_BUFFER_SAMPLES] __attribute__ ((aligned(16)));
 uint16_t adc_buffer_dma[ADC_BUFFER_SAMPLES * ADC_CHANNELS] __attribute__ ((
-			aligned));
+			aligned(16)));
 
 /******************************************************************************/
 /************************ Functions Declarations ******************************/
@@ -84,6 +78,7 @@ int dma_example_main(void)
 {
 	struct adrv9025_init_param adrv9025_init_par = { 0 };
 	struct adi_adrv9025_Device adrv9025_device = { 0 };
+	adi_adrv9025_AgcCfg_t agcConfig_init_param = { 0 };
 	struct ad9528_platform_data ad9528_pdata = { 0 };
 	struct ad9528_channel_spec ad9528_channels[14];
 	struct ad9528_init_param ad9528_param;
@@ -288,6 +283,7 @@ int dma_example_main(void)
 	adrv9025_init_par.adrv9025_device = &adrv9025_device;
 	adrv9025_init_par.dev_clk = ad9528_device->clk_desc[1];
 	adrv9025_init_par.streamImageFile = ADRV9025_STREAM_IMAGE_FILE;
+	adrv9025_init_par.agcConfig_init_param = &agcConfig_init_param;
 
 	status = adrv9025_init(&phy, &adrv9025_init_par);
 	if (status) {
@@ -363,6 +359,12 @@ int dma_example_main(void)
 		},
 	};
 
+	status = adi_adrv9025_HwOpen(phy->madDevice, &phy->spiSettings);
+	if (status) {
+		pr_err("error: adi_adrv9025_HwOpen() failed\n");
+		goto error_8;
+	}
+
 	jesd204_topology_init(&topology, devs,
 			      sizeof(devs)/sizeof(*devs));
 
@@ -433,7 +435,6 @@ error_8:
 error_7:
 	axi_dac_remove(phy->tx_dac);
 error_6:
-	adi_adrv9025_HwClose(phy->madDevice);
 	adrv9025_remove(phy);
 error_5:
 	axi_jesd204_rx_remove(rx_jesd);

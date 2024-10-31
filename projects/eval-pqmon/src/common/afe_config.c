@@ -5,36 +5,30 @@
  ********************************************************************************
  * Copyright (c) 2024 Analog Devices, Inc.
  *
- * All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  - Neither the name of Analog Devices, Inc. nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *  - The use of this software may or may not infringe the patent rights
- *    of one or more patent holders.  This license does not release you
- *    from the requirement that you obtain separate licenses from these
- *    patent holders to use this software.
- *  - Use of the software either in source or binary form, must be run
- *    on or directly connected to an Analog Devices Inc. component.
  *
- * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of Analog Devices, Inc. nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES, INC. “AS IS” AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL ANALOG DEVICES, INC. BE LIABLE FOR ANY DIRECT, INDIRECT,
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *******************************************************************************/
 
 /******************************************************************************/
@@ -47,7 +41,6 @@
 /********************** Macros and Constants Definitions **********************/
 /******************************************************************************/
 
-volatile uint8_t rmsOneReady = 0;
 struct no_os_spi_desc *hSPI;
 struct no_os_spi_msg spiMsg;
 extern struct no_os_gpio_init_param reset_gpio_ip;
@@ -104,7 +97,6 @@ int afe_init(void)
 		}
 	}
 
-	init_interrupt();
 	if (status == 0) {
 		status = config_wfb();
 		if (status != 0) {
@@ -168,7 +160,7 @@ int config_afe_irq(void)
 	uint32_t config = 0;
 	status = afe_write_32bit_reg(REG_MASK0, (uint32_t *)&config);
 	if (status == 0) {
-		config = BITM_MASK0_RMSONERDY;
+		config = BITM_MASK0_RMSONERDY | BITM_MASK0_COH_PAGE_RDY;
 		status = afe_write_32bit_reg(REG_MASK0, (uint32_t *)&config);
 		if (status != 0) {
 			status = SYS_STATUS_AFE_MASK0_FAILED;
@@ -425,20 +417,18 @@ int afe_read_status0(uint32_t *pSTATUS0)
 
 	uint32_t status0 = 0;
 	*pSTATUS0 = 0;
-	if (rmsOneReady != 0) {
-		rmsOneReady = 0;
-		status = afe_read_32bit_buff(REG_STATUS0, 1, pSTATUS0);
-		status0 = *pSTATUS0;
+
+	status = afe_read_32bit_buff(REG_STATUS0, 1, pSTATUS0);
+	status0 = *pSTATUS0;
+	if (status != 0) {
+		status = SYS_STATUS_AFE_STATUS0_FAILED;
+	}
+
+	if (status == 0) {
+		status0 |= BITM_STATUS0_RMSONERDY;
+		status = afe_write_32bit_reg(REG_STATUS0, (uint32_t *)&status0);
 		if (status != 0) {
 			status = SYS_STATUS_AFE_STATUS0_FAILED;
-		}
-
-		if (status == 0) {
-			status0 |= BITM_STATUS0_RMSONERDY;
-			status = afe_write_32bit_reg(REG_STATUS0, (uint32_t *)&status0);
-			if (status != 0) {
-				status = SYS_STATUS_AFE_STATUS0_FAILED;
-			}
 		}
 	}
 
@@ -451,12 +441,10 @@ void afe_wait_settling(uint32_t cycles)
 	uint32_t status0;
 
 	while (cycles > 0) {
-		if (rmsOneReady != 0) {
-			status = afe_read_status0((uint32_t *)&status0);
-			if ((status == SYS_STATUS_AFE_STATUS0_FAILED) ||
-			    (status == SYS_STATUS_SUCCESS)) {
-				cycles--;
-			}
+		status = afe_read_status0((uint32_t *)&status0);
+		if ((status == SYS_STATUS_AFE_STATUS0_FAILED) ||
+		    (status == SYS_STATUS_SUCCESS)) {
+			cycles--;
 		}
 	}
 }

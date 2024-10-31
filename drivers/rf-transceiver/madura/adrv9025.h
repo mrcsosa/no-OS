@@ -1,10 +1,8 @@
-/* SPDX-License-Identifier: GPL-2.0 */
-/*
+/*/*
  * ADRV9025
  *
  * Copyright 2020-2023 Analog Devices Inc.
  *
- * Licensed under the GPL-2.
  */
 
 #ifndef IIO_TRX_ADRV9025_H_
@@ -76,7 +74,6 @@ enum adrv9025_clocks {
 #define ADRV9025_MAX_NUM_GAIN_TABLES 10
 
 struct adrv9025_rf_phy {
-	struct no_os_spi_desc		*spi_desc;
 	adi_adrv9025_Device_t		adi_adrv9025_device;
 	adi_adrv9025_Device_t		*madDevice;
 	adi_adrv9025_SpiSettings_t	spiSettings;
@@ -84,6 +81,8 @@ struct adrv9025_rf_phy {
 	adi_adrv9025_PlatformFiles_t	platformFiles;
 	adi_adrv9025_PostMcsInit_t	adrv9025PostMcsInitInst;
 	struct adrv9025_hal_cfg		hal;
+
+	adi_adrv9025_AgcCfg_t  		*agcConfig;
 
 	struct jesd204_dev		*jdev;
 	/* protect against device accesses */
@@ -110,6 +109,7 @@ struct adrv9025_init_param {
 	struct no_os_clk_desc		*dev_clk;
 	struct adi_adrv9025_Device	*adrv9025_device;
 	char				*streamImageFile;
+	adi_adrv9025_AgcCfg_t  		*agcConfig_init_param;
 };
 
 /* Initialize the device. */

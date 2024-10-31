@@ -5,36 +5,30 @@
 ********************************************************************************
  * Copyright 2019(c) Analog Devices, Inc.
  *
- * All rights reserved.
- *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
- *  - Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  - Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in
- *    the documentation and/or other materials provided with the
- *    distribution.
- *  - Neither the name of Analog Devices, Inc. nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *  - The use of this software may or may not infringe the patent rights
- *    of one or more patent holders.  This license does not release you
- *    from the requirement that you obtain separate licenses from these
- *    patent holders to use this software.
- *  - Use of the software either in source or binary form, must be run
- *    on or directly connected to an Analog Devices Inc. component.
  *
- * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES "AS IS" AND ANY EXPRESS OR
- * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, NON-INFRINGEMENT,
- * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
- * IN NO EVENT SHALL ANALOG DEVICES BE LIABLE FOR ANY DIRECT, INDIRECT,
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of Analog Devices, Inc. nor the names of its
+ *    contributors may be used to endorse or promote products derived from this
+ *    software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY ANALOG DEVICES, INC. “AS IS” AND ANY EXPRESS OR
+ * IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL ANALOG DEVICES, INC. BE LIABLE FOR ANY DIRECT, INDIRECT,
  * INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
- * LIMITED TO, INTELLECTUAL PROPERTY RIGHTS, PROCUREMENT OF SUBSTITUTE GOODS OR
- * SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
- * CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
- * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ * OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ * LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  ******************************************************************************/
 
 /******************************************************************************/
@@ -519,6 +513,7 @@ static int32_t spi_engine_compile_message(struct no_os_spi_desc *desc,
 		struct spi_engine_msg *msg)
 {
 	struct spi_engine_desc	*desc_extra;
+	uint8_t cfg_reg;
 
 	desc_extra = desc->extra;
 
@@ -535,14 +530,19 @@ static int32_t spi_engine_compile_message(struct no_os_spi_desc *desc,
 					    desc_extra->data_width));
 	/*
 	 * Configure the spi mode :
+	 * 	- sdo_idle_state
 	 *	- 3 wire
 	 *	- CPOL
 	 *	- CPHA
 	 */
+	cfg_reg = desc->mode;
+	if (desc_extra->sdo_idle_state != 0)
+		cfg_reg |= SPI_ENGINE_CONFIG_SDO_IDLE;
+
 	spi_engine_queue_append_cmd(&msg->cmds,
 				    SPI_ENGINE_CMD_CONFIG(
 					    SPI_ENGINE_CMD_REG_CONFIG,
-					    desc->mode));
+					    cfg_reg));
 
 	/* Add a sync command to signal that the transfer has finished */
 	spi_engine_queue_add_cmd(&msg->cmds, SPI_ENGINE_CMD_SYNC(_sync_id));
@@ -813,6 +813,7 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 	struct spi_engine_msg	transfer;
 	struct spi_engine_desc	*eng_desc;
 	uint32_t 		i;
+	int32_t			ret;
 
 	eng_desc = desc->extra;
 
@@ -843,6 +844,7 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 
 	}
 
+	ret = 0;
 	spi_engine_transfer_message(desc, &transfer);
 
 	/* Start transfer */
@@ -860,7 +862,9 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 			// Address of data destination
 			.dest_addr = 0
 		};
-		axi_dmac_transfer_start(eng_desc->offload_tx_dma, &tx_transfer);
+		ret = axi_dmac_transfer_start(eng_desc->offload_tx_dma, &tx_transfer);
+		if (ret)
+			goto error;
 	}
 
 	if(eng_desc->offload_config & OFFLOAD_RX_EN) {
@@ -876,15 +880,20 @@ int32_t spi_engine_offload_transfer(struct no_os_spi_desc *desc,
 			// Address of data destination
 			.dest_addr = (uintptr_t)msg.rx_addr
 		};
-		axi_dmac_transfer_start(eng_desc->offload_rx_dma, &rx_transfer);
-		axi_dmac_transfer_wait_completion(eng_desc->offload_rx_dma, 500);
+		ret = axi_dmac_transfer_start(eng_desc->offload_rx_dma, &rx_transfer);
+		if (ret)
+			goto error;
+		ret = axi_dmac_transfer_wait_completion(eng_desc->offload_rx_dma, 500);
+		if (ret)
+			goto error;
 	}
 
 	usleep(1000);
 
+error:
 	spi_engine_queue_no_os_free(&transfer.cmds);
 
-	return 0;
+	return ret;
 }
 
 /**
