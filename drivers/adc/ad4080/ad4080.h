@@ -242,13 +242,27 @@ enum ad4080_fifo_mode {
 	AD4080_EVENT_TRIGGER,
 };
 
+struct ad4080_spi_desc {
+	struct no_os_spi_desc *spi;
+	struct no_os_gpio_desc *ss;
+};
+
+struct ad4080_gp_desc {
+	enum ad4080_gpio_op_enable op_enable;
+	enum ad4080_gpio_op_func_sel func_sel;
+	struct no_os_gpio_desc *gp;
+};
+
 /**
  * @struct ad4080_dev
  * @brief ad4080 Device structure.
  */
 struct ad4080_dev {
+	/* Old SPI. Mark is as deprecated for now */
+	struct no_os_spi_desc __attribute__((deprecated)) *spi_desc;
 	/* SPI */
-	struct no_os_spi_desc	*spi_desc;
+	struct ad4080_spi_desc 	cfg;
+	struct ad4080_spi_desc 	data;
 	/* SPI 3-Wire Connection */
 	bool spi3wire;
 	/** Address Ascension */
@@ -281,10 +295,19 @@ struct ad4080_dev {
 	enum ad4080_intf_ldo_pd intf_ldo_pd;
 	/** AD4080 Conversion Data FIFO Mode */
 	enum ad4080_fifo_mode fifo_mode;
-	/** AD4080 GPIO Output Enable state */
-	enum ad4080_gpio_op_enable gpio_op_enable[NUM_AD4080_GPIO];
-	/** AD4080 GPIO Output Function Selection */
-	enum ad4080_gpio_op_func_sel gpio_op_func_sel[NUM_AD4080_GPIO];
+	/** AD4080 private data */
+	char __attribute__((aligned(16))) privdata[0];
+};
+
+struct ad4080_spi_init_param {
+	struct no_os_spi_init_param *spi;
+	struct no_os_gpio_init_param *ss;
+};
+
+struct ad4080_gp_init_param {
+	enum ad4080_gpio_op_enable op_enable;
+	enum ad4080_gpio_op_func_sel func_sel;
+	struct no_os_gpio_init_param *gp;
 };
 
 /**
@@ -292,8 +315,11 @@ struct ad4080_dev {
  * @brief ad4080 Device initialization parameters.
  */
 struct ad4080_init_param {
+	/* Old SPI. mark it as deprecated for now */
+	struct no_os_spi_init_param __attribute__((deprecated)) *spi_init;
 	/* SPI */
-	struct no_os_spi_init_param	*spi_init;
+	struct ad4080_spi_init_param cfg;
+	struct ad4080_spi_init_param data;
 	/* SPI 3-Wire Connection */
 	bool spi3wire;
 	/** Address Ascension */
@@ -326,11 +352,19 @@ struct ad4080_init_param {
 	enum ad4080_intf_ldo_pd intf_ldo_pd;
 	/** AD4080 Conversion Data FIFO Mode */
 	enum ad4080_fifo_mode fifo_mode;
-	/** AD4080 GPIO Output Enable state */
-	enum ad4080_gpio_op_enable gpio_op_enable[NUM_AD4080_GPIO];
-	/** AD4080 GPIO Output Function Selection */
-	enum ad4080_gpio_op_func_sel gpio_op_func_sel[NUM_AD4080_GPIO];
+	/** AD4080 privdata size */
+	size_t privdata_len;
 };
+
+static inline void *ad4080_privdata(struct ad4080_dev *dev)
+{
+	if (!dev)
+		return NULL;
+	return dev->privdata;
+}
+
+int ad4080_read_data(struct ad4080_dev *dev, uint8_t *buf, size_t len);
+
 /** Writes data into a register.  */
 int ad4080_write(struct ad4080_dev *dev, uint16_t reg_addr, uint8_t reg_val);
 
