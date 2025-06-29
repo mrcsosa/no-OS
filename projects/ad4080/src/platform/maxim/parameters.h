@@ -18,26 +18,47 @@
 
 extern struct max_gpio_init_param max_gpio_extra;
 
+/* AFE_CTRL */
+#define AFE_CTRL_PORT	0
+#define AFE_CTRL_NUMBER 10
+#define AFE_CTRL_PULL 	NO_OS_PULL_NONE
+#define AFE_CTRL_OPS 	&max_gpio_ops
+#define AFE_CTRL_EXTRA 	&max_gpio_extra
+
+/* GATE_CTRL_Q4 */
+#define GATE_CTRL_Q4_PORT	0
+#define GATE_CTRL_Q4_NUMBER 	19
+#define GATE_CTRL_Q4_PULL 	NO_OS_PULL_NONE
+#define GATE_CTRL_Q4_OPS 	&max_gpio_ops
+#define GATE_CTRL_Q4_EXTRA 	&max_gpio_extra
+
+/* GATE_CTRL_Q3 */
+#define GATE_CTRL_Q3_PORT	0
+#define GATE_CTRL_Q3_NUMBER 	18
+#define GATE_CTRL_Q3_PULL 	NO_OS_PULL_NONE
+#define GATE_CTRL_Q3_OPS 	&max_gpio_ops
+#define GATE_CTRL_Q3_EXTRA 	&max_gpio_extra
+
+/* GATE_CTRL_Q2 */
+#define GATE_CTRL_Q2_PORT	0
+#define GATE_CTRL_Q2_NUMBER 	17
+#define GATE_CTRL_Q2_PULL 	NO_OS_PULL_NONE
+#define GATE_CTRL_Q2_OPS 	&max_gpio_ops
+#define GATE_CTRL_Q2_EXTRA 	&max_gpio_extra
+
+/* GATE_CTRL_Q1 */
+#define GATE_CTRL_Q1_PORT	0
+#define GATE_CTRL_Q1_NUMBER 	16
+#define GATE_CTRL_Q1_PULL 	NO_OS_PULL_NONE
+#define GATE_CTRL_Q1_OPS 	&max_gpio_ops
+#define GATE_CTRL_Q1_EXTRA 	&max_gpio_extra
+
 /* GP3 */
 #define GP3_PORT	0
 #define GP3_NUMBER 	4
 #define GP3_PULL 	NO_OS_PULL_NONE
 #define GP3_OPS 	&max_gpio_ops
 #define GP3_EXTRA 	&max_gpio_extra
-
-/* GP2 */
-#define GP2_PORT	0
-#define GP2_NUMBER 	5
-#define GP2_PULL 	NO_OS_PULL_NONE
-#define GP2_OPS 	&max_gpio_ops
-#define GP2_EXTRA 	&max_gpio_extra
-
-/* GP1 */
-#define GP1_PORT	0
-#define GP1_NUMBER 	3
-#define GP1_PULL 	NO_OS_PULL_NONE
-#define GP1_OPS 	&max_gpio_ops
-#define GP1_EXTRA 	&max_gpio_extra
 
 /* software chip select for data SPI */
 #define DATA_SWSS_PORT		0

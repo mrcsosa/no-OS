@@ -82,6 +82,7 @@ enum {
 	FILTER_SEL_GLOB_ATTR_ID,
 	FILTER_SINC_DEC_RATE_GLOB_ATTR_ID,
 	DEVICE_MODE_GLOB_ATTR_ID,
+	AFE_CTRL_GLOB_ATTR_ID,
 	MAX_ATTR_ID,
 };
 
@@ -113,6 +114,7 @@ struct iio_ad4080_desc {
 	struct ad4080_dev *ad4080;
 	struct iio_ad4080_fifo_struct fifo;
 	struct iio_ad4080_completion *ff_full_completion;
+	struct no_os_gpio_desc *afe_ctrl;
 
 	uint32_t app_device_count;
 	char app_device_name[AD4080_IIO_APP_DEVICE_NAME_LEN];
@@ -124,6 +126,7 @@ struct iio_ad4080_desc {
 struct iio_ad4080_init_param {
 	struct ad4080_init_param *ad4080_init_param;
 	struct no_os_gpio_init_param *ff_full_init_param;
+	struct no_os_gpio_init_param *afe_ctrl_init_param;
 	struct no_os_irq_platform_ops *gpio_irq_platform_ops;
 	size_t i_gp;
 	size_t watermark;

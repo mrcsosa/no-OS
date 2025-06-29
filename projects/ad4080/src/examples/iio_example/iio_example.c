@@ -65,14 +65,68 @@ static struct ad4080_init_param default_ad4080_init_param = {
 	.op_mode = AD4080_OP_NORMAL,
 };
 
+static struct no_os_gpio_desc *gate_ctrl_q1 = NULL;
+static struct no_os_gpio_desc *gate_ctrl_q2 = NULL;
+static struct no_os_gpio_desc *gate_ctrl_q3 = NULL;
+static struct no_os_gpio_desc *gate_ctrl_q4 = NULL;
+
+static int clock_gen_init(void)
+{
+	int err;
+
+	/* pull down gate ctrl q1 */
+	err = no_os_gpio_get(&gate_ctrl_q1, &gate_ctrl_q1_init_param);
+	if (err)
+		return err;
+	no_os_gpio_direction_output(gate_ctrl_q1, NO_OS_GPIO_LOW);
+
+	/* pull down gate ctrl q2 */
+	err = no_os_gpio_get(&gate_ctrl_q2, &gate_ctrl_q2_init_param);
+	if (err)
+		goto err_q2;
+	no_os_gpio_direction_output(gate_ctrl_q2, NO_OS_GPIO_LOW);
+
+	/* pull down gate ctrl q3 */
+	err = no_os_gpio_get(&gate_ctrl_q3, &gate_ctrl_q3_init_param);
+	if (err)
+		goto err_q3;
+	no_os_gpio_direction_output(gate_ctrl_q3, NO_OS_GPIO_LOW);
+
+	/* pull down gate ctrl q4 */
+	err = no_os_gpio_get(&gate_ctrl_q4, &gate_ctrl_q4_init_param);
+	if (err)
+		goto err_q4;
+	no_os_gpio_direction_output(gate_ctrl_q4, NO_OS_GPIO_LOW);
+
+	return 0;
+
+err_q4:
+	no_os_gpio_remove(gate_ctrl_q3);
+err_q3:
+	no_os_gpio_remove(gate_ctrl_q2);
+err_q2:
+	no_os_gpio_remove(gate_ctrl_q1);
+	return err;
+}
+
+static void clock_gen_fini(void)
+{
+	no_os_gpio_remove(gate_ctrl_q4);
+	no_os_gpio_remove(gate_ctrl_q3);
+	no_os_gpio_remove(gate_ctrl_q2);
+	no_os_gpio_remove(gate_ctrl_q1);
+	return;
+}
+
 static uint8_t adc_buffer[AD4080_MAX_FIFO_WATERMARK * sizeof(uint32_t)];
 
 int iio_example_main(void)
 {
 	int err;
-	const struct iio_ad4080_init_param iio_ad4080_init_param = {
+	struct iio_ad4080_init_param iio_ad4080_init_param = {
 		.ad4080_init_param = &default_ad4080_init_param,
 		.ff_full_init_param = &gp3_init_param,
+		.afe_ctrl_init_param = &afe_ctrl_init_param,
 		.gpio_irq_platform_ops = GPIO_IRQ_OPS,
 		.i_gp = AD4080_GPIO_3,
 		.watermark = AD4080_MAX_FIFO_WATERMARK,
@@ -93,6 +147,13 @@ int iio_example_main(void)
 	if (err)
 		goto err_exit;
 
+	/* now, pull down low all the clock generator control signals. 
+	 * we don't use them since the target board has a rotary switch 
+	 * to let the user control the conversion clock anyway. */
+	err = clock_gen_init();
+	if (err)
+		goto err_clock_gen;
+
 	read_data_buffer.size = sizeof adc_buffer;
 	read_data_buffer.buff = adc_buffer;
 
@@ -110,11 +171,15 @@ int iio_example_main(void)
 	iio_app_init_param.devices = &single_ad4080_iio_app_device;
 	iio_app_init_param.nb_devices = 1;
 	iio_app_init_param.uart_init_params = iio_uart_init_param;
-	iio_app_init(&iio_app, iio_app_init_param);
+	err = iio_app_init(&iio_app, iio_app_init_param);
+	if (err)
+		goto err_iio_app_init;
 
 	err = iio_app_run(iio_app);
 
-err_iio_app_device:
+err_iio_app_init:
+	clock_gen_fini();
+err_clock_gen:
 	iio_ad4080_fini(iio_ad4080);
 
 err_exit:

@@ -782,6 +782,32 @@ static int device_mode_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return 0;
 }
 
+static int afe_ctrl_attr_handler(struct iio_ad4080_desc *iio_ad4080,
+				 char *buf,
+				 uint32_t len,
+				 const struct iio_ch_info *ch_info,
+				 bool show)
+{
+	static const char *afe_stat[] = { "afe_off", "afe_on" };
+	uint8_t val;
+	char *endptr;
+
+	if (show) {
+		no_os_gpio_get_value(iio_ad4080->afe_ctrl, &val);
+		return sprintf(buf, "%s", afe_stat[val]);
+	}
+
+	val = strtol(buf, &endptr, 10);
+	if (*endptr != '\0')
+		return -1;
+
+	/* we turn off or turn on */
+	if (val > 1)
+		return -1;
+
+	return no_os_gpio_set_value(iio_ad4080->afe_ctrl, val);
+}
+
 static attr_fn attr_handlers[] = {
 	raw_attr_handler,
 	scale_attr_handler,
@@ -802,6 +828,7 @@ static attr_fn attr_handlers[] = {
 	filter_sel_glob_attr_handler,
 	filter_sinc_dec_glob_attr_handler,
 	device_mode_glob_attr_handler,
+	afe_ctrl_attr_handler,
 };
 
 static int ad4080_attr_store(void *device,
@@ -920,6 +947,7 @@ static struct iio_attribute ad4080_global_attr[] = {
 	IIO_AD4080_GLOB_ATTR("filter_select", FILTER_SEL_GLOB_ATTR_ID),
 	IIO_AD4080_GLOB_ATTR("filter_sinc_dec", FILTER_SINC_DEC_RATE_GLOB_ATTR_ID),
 	IIO_AD4080_GLOB_ATTR("device_mode", DEVICE_MODE_GLOB_ATTR_ID),
+	IIO_AD4080_GLOB_ATTR("afe_ctrl", AFE_CTRL_GLOB_ATTR_ID),
 	{0},
 };
 
@@ -1036,11 +1064,22 @@ int iio_ad4080_init(struct iio_ad4080_desc **iio_ad4080,
 					   ad4080_iio);
 	if (err)
 		goto err_register_irq;
-	
+
+	/* initialize the AFE control - default disabled */
+	if (!iio_ad4080_init_param->afe_ctrl_init_param)
+		goto err_register_irq;
+	err = no_os_gpio_get(&ad4080_iio->afe_ctrl,
+			     iio_ad4080_init_param->afe_ctrl_init_param);
+	if (err)
+		goto err_afe_ctrl;
+	no_os_gpio_direction_output(ad4080_iio->afe_ctrl, NO_OS_GPIO_LOW);
+
 	*iio_ad4080 = ad4080_iio;
 
 	return 0;
 
+err_afe_ctrl:
+	iio_ad4080_fifo_unregister_irq(fifo, iio_ad4080_init_param->i_gp);
 err_register_irq:
 	iio_ad4080_fifo_unset_watermark(fifo);
 err_set_watermark:
@@ -1061,6 +1100,7 @@ void iio_ad4080_fini(struct iio_ad4080_desc *iio_ad4080)
 	ad4080 = iio_ad4080->ad4080;
 	fifo = &iio_ad4080->fifo;
 	
+	iio_ad4080_fifo_unregister_irq(fifo, fifo->i_gp);
 	iio_ad4080_fifo_unset_watermark(fifo);
 	iio_ad4080_fifo_fini(fifo);
 	ad4080_remove(ad4080);

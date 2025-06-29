@@ -1,27 +1,51 @@
 #include <common_data.h>
 
+struct no_os_gpio_init_param afe_ctrl_init_param = {
+	.port = AFE_CTRL_PORT,
+	.number = AFE_CTRL_NUMBER,
+	.pull = AFE_CTRL_PULL,
+	.platform_ops = AFE_CTRL_OPS,
+	.extra = AFE_CTRL_EXTRA,
+};
+
+struct no_os_gpio_init_param gate_ctrl_q4_init_param = {
+	.port = GATE_CTRL_Q4_PORT,
+	.number = GATE_CTRL_Q4_NUMBER,
+	.pull = GATE_CTRL_Q4_PULL,
+	.platform_ops = GATE_CTRL_Q4_OPS,
+	.extra = GATE_CTRL_Q4_EXTRA,
+};
+
+struct no_os_gpio_init_param gate_ctrl_q3_init_param = {
+	.port = GATE_CTRL_Q3_PORT,
+	.number = GATE_CTRL_Q3_NUMBER,
+	.pull = GATE_CTRL_Q3_PULL,
+	.platform_ops = GATE_CTRL_Q3_OPS,
+	.extra = GATE_CTRL_Q3_EXTRA,
+};
+
+struct no_os_gpio_init_param gate_ctrl_q2_init_param = {
+	.port = GATE_CTRL_Q2_PORT,
+	.number = GATE_CTRL_Q2_NUMBER,
+	.pull = GATE_CTRL_Q2_PULL,
+	.platform_ops = GATE_CTRL_Q2_OPS,
+	.extra = GATE_CTRL_Q2_EXTRA,
+};
+
+struct no_os_gpio_init_param gate_ctrl_q1_init_param = {
+	.port = GATE_CTRL_Q1_PORT,
+	.number = GATE_CTRL_Q1_NUMBER,
+	.pull = GATE_CTRL_Q1_PULL,
+	.platform_ops = GATE_CTRL_Q1_OPS,
+	.extra = GATE_CTRL_Q1_EXTRA,
+};
+
 struct no_os_gpio_init_param gp3_init_param = {
 	.port = GP3_PORT,
 	.number = GP3_NUMBER,
 	.pull = GP3_PULL,
 	.platform_ops = GP3_OPS,
 	.extra = GP3_EXTRA,
-};
-
-struct no_os_gpio_init_param gp2_init_param = {
-	.port = GP2_PORT,
-	.number = GP2_NUMBER,
-	.pull = GP2_PULL,
-	.platform_ops = GP2_OPS,
-	.extra = GP2_EXTRA,
-};
-
-struct no_os_gpio_init_param gp1_init_param = {
-	.port = GP1_PORT,
-	.number = GP1_NUMBER,
-	.pull = GP1_PULL,
-	.platform_ops = GP1_OPS,
-	.extra = GP1_EXTRA,
 };
 
 struct no_os_gpio_init_param data_ss_init_param = {

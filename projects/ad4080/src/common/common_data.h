@@ -3,9 +3,13 @@
 
 #include "parameters.h"
 
+extern struct no_os_gpio_init_param afe_ctrl_init_param;
+extern struct no_os_gpio_init_param gate_ctrl_q4_init_param;
+extern struct no_os_gpio_init_param gate_ctrl_q3_init_param;
+extern struct no_os_gpio_init_param gate_ctrl_q2_init_param;
+extern struct no_os_gpio_init_param gate_ctrl_q1_init_param;
+
 extern struct no_os_gpio_init_param gp3_init_param;
-extern struct no_os_gpio_init_param gp2_init_param;
-extern struct no_os_gpio_init_param gp1_init_param;
 
 extern struct no_os_gpio_init_param data_ss_init_param;
 extern struct no_os_spi_init_param data_spi_init_param;
