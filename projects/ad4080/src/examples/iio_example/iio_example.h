@@ -1,6 +1,6 @@
 #ifndef __IIO_EXAMPLE_H__
 #define __IIO_EXAMPLE_H__
-#include <no_os_print_log.h>
+//#include <no_os_print_log.h>
 
 #include <common_data.h>
 

@@ -1,10 +1,10 @@
 /***************************************************************************//**
- *   @file   iio_ad463x.c
- *   @brief  Implementation of iio_ad463x.c.
+ *   @file   iio_ad4080.c
+ *   @brief  Implementation of iio_ad4080.c.
  *   @author Niel Acuna (niel.acuna@analog.com)
  *           Marc Paolo Sosa (MarcPaolo.Sosa@analog.com)
 ********************************************************************************
- * Copyright 2021(c) Analog Devices, Inc.
+ * Copyright 2025(c) Analog Devices, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -41,8 +41,32 @@
 
 #include <iio_ad4080.h>
 
+
+enum {
+	RAW_ATTR_ID,
+	SCALE_ATTR_ID,
+	OFFSET_ATTR_ID,
+	GP0_IO_GLOB_ATTR_ID,
+	GP0_FUNC_GLOB_ATTR_ID,
+	GP1_IO_GLOB_ATTR_ID,
+	GP1_FUNC_GLOB_ATTR_ID,
+	GP2_IO_GLOB_ATTR_ID,
+	GP2_FUNC_GLOB_ATTR_ID,
+	GP3_IO_GLOB_ATTR_ID,
+	GP3_FUNC_GLOB_ATTR_ID,
+	FIFO_MODE_GLOB_ATTR_ID,
+	FIFO_WATERMARK_GLOB_ATTR_ID,
+	EVT_DETECTION_HYSTERESIS_GLOB_ATTR_ID,
+	EVT_DETECTION_HI_GLOB_ATTR_ID,
+	EVT_DETECTION_LO_GLOB_ATTR_ID,
+	FILTER_SEL_GLOB_ATTR_ID,
+	FILTER_SINC_DEC_RATE_GLOB_ATTR_ID,
+	DEVICE_MODE_GLOB_ATTR_ID,
+	MAX_ATTR_ID,
+};
+
 struct iio_ad4080_completion {
-#define IIO_AD4080_COMPLETION_SIGNATURE 	0xdeadc0de
+// #define IIO_AD4080_COMPLETION_SIGNATURE 	0xdeadc0de
 	uint32_t signature;
 	bool done;
 	int ret;
@@ -55,7 +79,11 @@ typedef int (*attr_fn)(struct iio_ad4080_desc *iio_ad4080,
 		       const struct iio_ch_info *ch_info,
 		       bool show);
 
-
+/**
+ * @brief Initializes the completion structure.
+ * @param completion - The completion structure to be initialized.
+ * @return 0 in case of success, an error code otherwise.
+ */
 static int init_completion(struct iio_ad4080_completion *completion)
 {
 	if (!completion)
@@ -65,6 +93,11 @@ static int init_completion(struct iio_ad4080_completion *completion)
 	return 0;
 }
 
+/**
+ * @brief Initializes the completion structure.
+ * @param completion - The completion structure to be initialized.
+ * @return 0 in case of success, an error code otherwise.
+ */
 static int wait_for_completion(struct iio_ad4080_completion *completion)
 {
 	for(;;) {
@@ -76,6 +109,13 @@ static int wait_for_completion(struct iio_ad4080_completion *completion)
 	return completion->ret;
 }
 
+/**
+ * @brief Waits for the completion structure to be completed or times out.
+ * @param completion - The completion structure to wait for.
+ * @param timeout - The maximum time to wait in milliseconds.
+ * @return 0 in case of success, an error code otherwise.
+ * @note The completion structure must be initialized before calling this function.
+ */
 static int wait_for_completion_timeout(struct iio_ad4080_completion *completion,
 		uint32_t timeout)
 {
@@ -86,6 +126,13 @@ static int wait_for_completion_timeout(struct iio_ad4080_completion *completion,
 	return wait_for_completion(completion);
 }
 
+/**
+ * @brief Completes the completion structure with the given return value.
+ * @param completion - The completion structure to be completed.
+ * @param ret - The return value to be set in the completion structure.
+ * * @return 0 in case of success, an error code otherwise.
+ * @note The completion structure must be initialized before calling this function.
+ */
 static int complete(struct iio_ad4080_completion *completion, int ret)
 {
 	if (!completion)
@@ -96,6 +143,12 @@ static int complete(struct iio_ad4080_completion *completion, int ret)
 	return 0;
 }
 
+/**
+ * @brief Formats the raw data read from the AD4080 FIFO into a more readable format.
+ * @param data - The formatted data to be filled.
+ * @param raw_data - The raw data read from the FIFO.
+ * @param count - The number of samples to format.
+ */
 static void ad4080_format_raw_data(uint32_t *data, uint8_t *raw_data, size_t count)
 {
 	size_t i;
@@ -106,15 +159,21 @@ static void ad4080_format_raw_data(uint32_t *data, uint8_t *raw_data, size_t cou
 	return;
 }
 
+/**
+ * @brief Reads the raw data from the AD4080 FIFO.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @return ret - The result of the read operation.
+ * 
+ */
 static int iio_ad4080_read_data(struct iio_ad4080_desc *iio_ad4080)
 {
-	struct ad4080_dev *ad4080 = iio_ad4080->ad4080;
+	struct ad4080_dev *dev = iio_ad4080->ad4080;
 	struct iio_ad4080_fifo_struct *fifo;
 	int err;
 
 	/* first read raw fifo data */
 	fifo = &iio_ad4080->fifo;
-	err = ad4080_read_data(ad4080, fifo->raw_fifo, fifo->bufsize);
+	err = ad4080_read_data(dev, fifo->raw_fifo, fifo->bufsize);
 	if (err)
 		return err;
 
@@ -124,7 +183,13 @@ static int iio_ad4080_read_data(struct iio_ad4080_desc *iio_ad4080)
 	return err;
 }
 
-/* this is a blocking function */
+/**
+ * @brief Triggers the AD4080 FIFO to read data immediately.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * 
+ * This function sets the FIFO mode to immediate trigger and waits for the FIFO to be filled.
+ * It uses a completion structure to wait for the FIFO to be filled before returning.
+ */
 static void iio_ad4080_immediate_trigger(struct iio_ad4080_desc *iio_ad4080)
 {
 	int err;
@@ -149,6 +214,13 @@ static void iio_ad4080_immediate_trigger(struct iio_ad4080_desc *iio_ad4080)
 	return;
 }
 
+/**
+ * @brief Reads a register from the AD4080 device.
+ * @param dev - The AD4080 device structure.
+ * @param reg - The register address to read from.
+ * @param readval - Pointer to store the read value.
+ * @return 
+ */
 static int32_t ad4080_reg_read(void *dev, uint32_t reg, uint32_t *readval)
 {
 	if (reg > AD4080_LAST_REG_ADDR)
@@ -156,6 +228,13 @@ static int32_t ad4080_reg_read(void *dev, uint32_t reg, uint32_t *readval)
 	return ad4080_read(dev, reg, (uint8_t *)readval);
 }
 
+/**
+ * @brief Writes a value to a register in the AD4080 device.
+ * @param dev - The AD4080 device structure.
+ * @param reg - The register address to write to.
+ * @param writeval - The value to write to the register.
+ * @return ret - The result of the write operation.
+ */
 static int32_t ad4080_reg_write(void *dev, uint32_t reg, uint32_t writeval)
 {
 	if (reg > AD4080_LAST_REG_ADDR)
@@ -163,6 +242,14 @@ static int32_t ad4080_reg_write(void *dev, uint32_t reg, uint32_t writeval)
 	return ad4080_write(dev, reg, writeval);
 }
 
+/**
+ * @brief Handles the raw attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the formatted data.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the data or not.
+ */
 static int raw_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			    char *buf, 
 		            uint32_t len,
@@ -180,6 +267,15 @@ static int raw_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return err;
 }
 
+/**
+ * @brief Handles the scale attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the scale value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the scale value or not.
+ * @return The formatted scale value as a string.
+ */
 static int scale_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -190,54 +286,87 @@ static int scale_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return sprintf(buf, "%10f", ad4080_scale);
 }
 
-static uint16_t ad4080_read16(struct ad4080_dev *ad4080, uint16_t reg)
+/**
+ * @brief Reads a 16-bit register from the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param reg - The register address to read from.
+ * @return The 16-bit value read from the register.
+ */
+static uint16_t ad4080_read16(struct ad4080_dev *dev, uint16_t reg)
 {
 	uint16_t val = 0;
-	if (ad4080) {
+	if (dev) {
 		uint8_t tmp;
-		ad4080_read(ad4080, reg + 1, &tmp);
+		ad4080_read(dev, reg + 1, &tmp);
 		val = tmp;
 
-		ad4080_read(ad4080, reg, &tmp);
+		ad4080_read(dev, reg, &tmp);
 		val = (val << 8) | tmp;
 	}
 	return val;
 }
 
-static void ad4080_write16(struct ad4080_dev *ad4080, uint16_t reg,
+/**
+ * @brief Writes a 16-bit value to a register in the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param reg - The register address to write to.
+ * @param reg_val - The 16-bit value to write to the register.
+ */
+static void ad4080_write16(struct ad4080_dev *dev, uint16_t reg,
 		uint16_t reg_val)
 {
-	if (ad4080) {
+	if (dev) {
 		uint8_t tmp;
 
 		tmp = (reg_val >> 8) & 0xF;
-		ad4080_write(ad4080, reg + 1, tmp);
+		ad4080_write(dev, reg + 1, tmp);
 
 
 		tmp = (uint8_t)(reg_val & 0xFF);
-		ad4080_write(ad4080, reg, tmp);
+		ad4080_write(dev, reg, tmp);
 	}
 	return;
 }
 
-static int16_t ad4080_read_offset(struct ad4080_dev *ad4080)
+/**
+ * @brief Reads the offset register from the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @return The offset value read from the register.
+ */
+static int16_t ad4080_read_offset(struct ad4080_dev *dev)
 {
 	int16_t reg_val = 0;
-	if (ad4080) {
-		reg_val = ad4080_read16(ad4080, AD4080_REG_OFFSET);
+	if (dev) {
+		reg_val = ad4080_read16(dev, AD4080_REG_OFFSET);
 	}
 	/* sign extend if we need to */
-	return reg_val & 0x800 ? -reg_val : reg_val;
+	return reg_val & OFFSET_CORRECTION_NEGATIVE_LIMIT ? -reg_val : reg_val;
+
+	//return reg_val & 0x800 ? -reg_val : reg_val;
 }
 
-static void ad4080_write_offset(struct ad4080_dev *ad4080, uint16_t offset)
+/**
+ * @brief Writes an offset value to the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param offset - The offset value to write to the register.
+ */
+static void ad4080_write_offset(struct ad4080_dev *dev, uint16_t offset)
 {
-	if (ad4080) {
-		ad4080_write16(ad4080, AD4080_REG_OFFSET, offset);
+	if (dev) {
+		ad4080_write16(dev, AD4080_REG_OFFSET, offset);
 	}
 	return;
 }
 
+/**
+ * @brief Handles the offset attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the offset value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the offset value or not.
+ * @return The formatted offset value as a string or an error code.
+ */
 static int offset_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			       char *buf, 
 		               uint32_t len,
@@ -245,14 +374,14 @@ static int offset_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 		               bool show)
 {
 	const double lsb = 0.00572;
-	struct ad4080_dev *ad4080;
+	struct ad4080_dev *dev;
 	double offset_correction_coefficient;
 	const double max_offset_correction = 2047 * lsb;
 	const double least_offset_correction = -2048 * lsb;
 	uint16_t offset;
-	ad4080 = iio_ad4080->ad4080;
+	dev = iio_ad4080->ad4080;
 	if (show) {
-		offset_correction_coefficient = (double)ad4080_read_offset(ad4080);
+		offset_correction_coefficient = (double)ad4080_read_offset(dev);
 		offset_correction_coefficient *= lsb;
 		return sprintf(buf, "%10f", offset_correction_coefficient);
 	}
@@ -265,12 +394,21 @@ static int offset_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 		offset_correction_coefficient = least_offset_correction;
 
 	offset = abs((int16_t)(offset_correction_coefficient / lsb));
-	ad4080_write_offset(ad4080, offset);
+	ad4080_write_offset(dev, offset);
 
 	return 0;
 }
 
-static int gpx_glob_io_attr_handler(struct ad4080_dev *ad4080,
+/**
+ * @brief Handles the GPIO input/output attribute for the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param buf - The buffer to store the GPIO configuration.
+ * @param len - The length of the buffer.
+ * @param show - Whether to show the GPIO configuration or not.
+ * @param gpio - The GPIO pin to configure (0-3).
+ * @return The formatted GPIO configuration as a string or an error code.
+ */
+static int gpx_glob_io_attr_handler(struct ad4080_dev *dev,
 				    char *buf,
 				    uint32_t len,
 				    bool show, 
@@ -286,7 +424,7 @@ static int gpx_glob_io_attr_handler(struct ad4080_dev *ad4080,
 	uint8_t mask;
 
 	mask = 1 << gpio;
-	ad4080_read(ad4080, AD4080_REG_GPIO_CONFIG_A, &config_a);
+	ad4080_read(dev, AD4080_REG_GPIO_CONFIG_A, &config_a);
 	if (show) {
 		index = ((config_a & mask) == mask) ? 1 : 0;
 		return sprintf(buf, "%s", *(io_str + index));
@@ -312,11 +450,20 @@ static int gpx_glob_io_attr_handler(struct ad4080_dev *ad4080,
 	else 
 		config_a |= mask;
 	
-	ad4080_write(ad4080, AD4080_REG_GPIO_CONFIG_A, config_a);
+	ad4080_write(dev, AD4080_REG_GPIO_CONFIG_A, config_a);
 
 	return 0;
 }
 
+/**
+ * @brief Handles the GPIO input/output attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the GPIO configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the GPIO configuration or not.
+ * @return The formatted GPIO configuration as a string or an error code.
+ */
 static int gp0_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      	    char *buf,
 				    uint32_t len,
@@ -326,6 +473,15 @@ static int gp0_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_io_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_0);
 }
 
+/**
+ * @brief Handles the GPIO input/output attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the GPIO configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the GPIO configuration or not.
+ * @return The formatted GPIO configuration as a string or an error code.
+ */
 static int gp1_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -335,6 +491,15 @@ static int gp1_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_io_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_1);
 }
 
+/**
+ * @brief Handles the GPIO input/output attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the GPIO configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the GPIO configuration or not.
+ * @return The formatted GPIO configuration as a string or an error code.
+ */
 static int gp2_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -344,6 +509,15 @@ static int gp2_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_io_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_2);
 }
 
+/**
+ * @brief Handles the GPIO input/output attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the GPIO configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the GPIO configuration or not.
+ * @return The formatted GPIO configuration as a string or an error code.
+ */
 static int gp3_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -353,7 +527,16 @@ static int gp3_io_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_io_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_3);
 }
 
-static int gpx_glob_func_attr_handler(struct ad4080_dev *ad4080,
+/**
+ * @brief Handles the function attribute for the AD4080 GPIO pins.
+ * @param ad4080 - The AD4080 device structure.
+ * @param buf - The buffer to store the function configuration.
+ * @param len - The length of the buffer.
+ * @param show - Whether to show the function configuration or not.
+ * @param gpio - The GPIO pin to configure (0-3).
+ * @return The formatted function configuration as a string or an error code.
+ */
+static int gpx_glob_func_attr_handler(struct ad4080_dev *dev,
 				      char *buf,
 				      uint32_t len,
 				      bool show, 
@@ -387,7 +570,7 @@ static int gpx_glob_func_attr_handler(struct ad4080_dev *ad4080,
 		mask = 0xF0;
 	}
 	
-	ad4080_read(ad4080, reg, &config);
+	ad4080_read(dev, reg, &config);
 	if (show) {
 		config = (config >> shift) & 0xF;
 
@@ -414,9 +597,18 @@ static int gpx_glob_func_attr_handler(struct ad4080_dev *ad4080,
 	config &= ~mask;
 	config |= (val << shift);
 	
-	return ad4080_write(ad4080, reg, config);
+	return ad4080_write(dev, reg, config);
 }
 
+/**
+ * @brief Handles the function attribute for the AD4080 GPIO pins.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the function configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the function configuration or not.
+ * @return The formatted function configuration as a string or an error code.
+ */
 static int gp0_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -426,6 +618,15 @@ static int gp0_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_func_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_0);
 }
 
+/**
+ * @brief Handles the function attribute for the AD4080 GPIO pins.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the function configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the function configuration or not.
+ * @return The formatted function configuration as a string or an error code.
+ */
 static int gp1_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -435,6 +636,15 @@ static int gp1_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_func_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_1);
 }
 
+/**
+ * @brief Handles the function attribute for the AD4080 GPIO pins.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the function configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the function configuration or not.
+ * @return The formatted function configuration as a string or an error code.
+ */
 static int gp2_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -444,6 +654,15 @@ static int gp2_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_func_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_2);
 }
 
+/**
+ * @brief Handles the function attribute for the AD4080 GPIO pins.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the function configuration.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the function configuration or not.
+ * @return The formatted function configuration as a string or an error code.
+ */
 static int gp3_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 			      char *buf, 
 		              uint32_t len,
@@ -453,6 +672,15 @@ static int gp3_func_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return gpx_glob_func_attr_handler(iio_ad4080->ad4080, buf, len, show, AD4080_GPIO_3);
 }
 
+/**
+ * @brief Handles the FIFO mode attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the FIFO mode.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the FIFO mode or not.
+ * @return The formatted FIFO mode as a string or an error code.
+ */
 static int fifo_mode_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 				       char *buf,
 				       uint32_t len,
@@ -493,6 +721,15 @@ static int fifo_mode_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return ad4080_set_fifo_mode(iio_ad4080->ad4080, mode);
 }
 
+/**
+ * @brief Handles the FIFO watermark attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the FIFO watermark.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the FIFO watermark or not.
+ * @return The formatted FIFO watermark as a string or an error code.
+ */
 static int fifo_watermark_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					    char *buf,
 					    uint32_t len,
@@ -526,34 +763,56 @@ static int fifo_watermark_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return ad4080_set_fifo_watermark(iio_ad4080->ad4080, (uint16_t)val);
 }
 
-static uint16_t ad4080_read_hysteresis(struct ad4080_dev *ad4080)
+/**
+ * @brief Reads the hysteresis value from the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @return The hysteresis value read from the register.
+ */
+static uint16_t ad4080_read_hysteresis(struct ad4080_dev *dev)
 {
 	uint16_t hyst = 0;
 	uint8_t tmp;
-	if (ad4080) {
-		ad4080_read(ad4080, AD4080_REG_EVENT_HYSTERESIS + 1, &tmp);
+	if (dev) {
+		ad4080_read(dev, AD4080_REG_EVENT_HYSTERESIS + 1, &tmp);
 		hyst = tmp << 8;
 
-		ad4080_read(ad4080, AD4080_REG_EVENT_HYSTERESIS, &tmp);
+		ad4080_read(dev, AD4080_REG_EVENT_HYSTERESIS, &tmp);
 		hyst = hyst | (tmp & 0xFF);
 	}
 	return hyst & 0x3FF;
 }
 
-static void ad4080_write_hysteresis(struct ad4080_dev *ad4080, uint16_t val)
+/**
+ * @brief Writes a hysteresis value to the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param val - The hysteresis value to write to the register.
+ * 
+ * This function writes a 10-bit hysteresis value to the AD4080 device, ensuring that
+ * the upper 5 bits are zeroed out before writing.
+ */
+static void ad4080_write_hysteresis(struct ad4080_dev *dev, uint16_t val)
 {
 	uint8_t tmp;
 	val = val & 0x3FF; /* zero out the upper 5 bits */
-	if (ad4080) {
+	if (dev) {
 		tmp = val >> 8;
-		ad4080_write(ad4080, AD4080_REG_EVENT_HYSTERESIS + 1, tmp);
+		ad4080_write(dev, AD4080_REG_EVENT_HYSTERESIS + 1, tmp);
 
 		tmp = val & 0xFF;
-		ad4080_write(ad4080, AD4080_REG_EVENT_HYSTERESIS, tmp);
+		ad4080_write(dev, AD4080_REG_EVENT_HYSTERESIS, tmp);
 	}
 	return;
 }
 
+/**
+ * @brief Handles the hysteresis attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the hysteresis value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the hysteresis value or not.
+ * @return The formatted hysteresis value as a string or an error code.
+ */
 static int evt_detection_hysteresis_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					    	      char *buf,
 						      uint32_t len,
@@ -580,37 +839,60 @@ static int evt_detection_hysteresis_glob_attr_handler(struct iio_ad4080_desc *ii
 	return 0;
 }
 
-
-
-static int16_t ad4080_read_evt_detection(struct ad4080_dev *ad4080, bool hi)
+/**
+ * @brief Reads the event detection value from the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param hi - Whether to read the high or low event detection value.
+ * @return The event detection value read from the register, sign-extended if necessary.
+ */
+static int16_t ad4080_read_evt_detection(struct ad4080_dev *dev, bool hi)
 {
 	uint16_t evt_detection_reg = AD4080_REG_EVENT_DETECTION_HI;
 	int16_t reg_val;
 	
-	if (!ad4080)
+	if (!dev)
 		return 0;
 
 	if (!hi)
 		evt_detection_reg = AD4080_REG_EVENT_DETECTION_LO;
 	
-	reg_val = ad4080_read16(ad4080, evt_detection_reg);
+	reg_val = ad4080_read16(dev, evt_detection_reg);
 
 	/* sign extend if we need to */
-	return reg_val & 0x800 ? -reg_val : reg_val;
+	return reg_val & OFFSET_CORRECTION_NEGATIVE_LIMIT ? -reg_val : reg_val;
+	// return reg_val & 0x800 ? -reg_val : reg_val;
 }
 
-static void ad4080_write_evt_detection(struct ad4080_dev *ad4080, uint16_t reg_val,
+/**
+ * @brief Writes an event detection value to the AD4080 device.
+ * @param ad4080 - The AD4080 device structure.
+ * @param reg_val - The event detection value to write to the register.
+ * @param hi - Whether to write to the high or low event detection register.
+ * 
+ * This function writes a 16-bit event detection value to the AD4080 device, either
+ * to the high or low event detection register based on the 'hi' parameter.
+ */
+static void ad4080_write_evt_detection(struct ad4080_dev *dev, uint16_t reg_val,
 		bool hi)
 {
 	uint16_t evt_detection_reg = AD4080_REG_EVENT_DETECTION_HI;
-	if (!ad4080)
+	if (!dev)
 		return;
 	if (!hi)
 		evt_detection_reg = AD4080_REG_EVENT_DETECTION_LO;
-	ad4080_write16(ad4080, evt_detection_reg, reg_val);
+	ad4080_write16(dev, evt_detection_reg, reg_val);
 	return ;
 }
 
+/**
+ * @brief Handles the event detection high attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the event detection high value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the event detection high value or not.
+ * @return The formatted event detection high value as a string or an error code.
+ */
 static int evt_detection_hi_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					      char *buf,
 					      uint32_t len,
@@ -639,6 +921,15 @@ static int evt_detection_hi_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080
 	return 0;
 }
 
+/**
+ * @brief Handles the event detection low attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the event detection low value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the event detection low value or not.
+ * @return The formatted event detection low value as a string or an error code.
+ */
 static int evt_detection_lo_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					      char *buf,
 					      uint32_t len,
@@ -667,6 +958,15 @@ static int evt_detection_lo_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080
 	return 0;
 }
 
+/**
+ * @brief Handles the filter selection attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the filter selection.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the filter selection or not.
+ * @return The formatted filter selection as a string or an error code.
+ */
 static int filter_sel_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					char *buf,
 					uint32_t len,
@@ -703,6 +1003,15 @@ static int filter_sel_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	return ad4080_write(iio_ad4080->ad4080, AD4080_REG_FILTER_CONFIG, reg_val);
 }
 
+/**
+ * @brief Handles the sinc decimation attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the sinc decimation value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the sinc decimation value or not.
+ * @return The formatted sinc decimation value as a string or an error code.
+ */
 static int filter_sinc_dec_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					     char *buf,
 					     uint32_t len,
@@ -722,15 +1031,17 @@ static int filter_sinc_dec_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 		"1024",
 	};
 	uint8_t reg_val;
-	uint8_t mask = 0b01111000;
+	//uint8_t mask = 0b01111000; //*note* for bit maskings please refer to ad4080.h we have ways to mask the 
 	uint8_t shift = 3;
 	long sinc_dec;
 	char *endptr;
 
 	ad4080_read(iio_ad4080->ad4080, AD4080_REG_FILTER_CONFIG, &reg_val);				
 	if (show) {
-		reg_val &= mask;
-		reg_val >>= shift;
+		//reg_val &= mask;
+		// reg_val &= AD4080_SINC_DECIMATION_MSK; 
+		// reg_val >>= shift;
+		reg_val = (reg_val & AD4080_SINC_DECIMATION_MSK) >> shift;
 		return sprintf(buf, "%s", decimation_factor[reg_val]);
 	}
 
@@ -741,11 +1052,21 @@ static int filter_sinc_dec_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	if (sinc_dec > 9)
 		return -1;
 
-	reg_val &= ~mask;
-	reg_val |= (sinc_dec << shift);
+	// reg_val &= ~mask;
+	// reg_val |= (sinc_dec << shift);
+	reg_val = (reg_val & ~AD4080_SINC_DECIMATION_MSK) | (sinc_dec << shift);
 	return ad4080_write(iio_ad4080->ad4080, AD4080_REG_FILTER_CONFIG, reg_val);
 }
 
+/**
+ * @brief Handles the device mode attribute for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param buf - The buffer to store the device mode.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param show - Whether to show the device mode or not.
+ * @return The formatted device mode as a string or an error code.
+ */
 static int device_mode_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 					 char *buf,
 					 uint32_t len,
@@ -763,23 +1084,40 @@ static int device_mode_glob_attr_handler(struct iio_ad4080_desc *iio_ad4080,
 	char *endptr;
 	uint8_t opmode;
 
+	// ad4080_read(iio_ad4080->ad4080, AD4080_REG_DEVICE_CONFIG, &reg_val);
+	// if (show) {
+	// 	reg_val &= AD4080_OP_MODE_MSK;
+	// 	//reg_val &= mask;
+	// 	return sprintf(buf, "%s", operating_modes[reg_val]);
+	// }
+
+	// opmode = strtol(buf, &endptr, 10);
+	// if (*endptr != '\0')
+	// 	return -1;
+
+	// if ((opmode == 1) || (opmode > 3))
+	// 	return -1;
+
+	// //reg_val &= ~mask;
+	// reg_val &= ~AD4080_OP_MODE_MSK;
+	// reg_val |= opmode;
+	// ad4080_write(iio_ad4080->ad4080, AD4080_REG_DEVICE_CONFIG, reg_val);
+	// return 0;
+
 	ad4080_read(iio_ad4080->ad4080, AD4080_REG_DEVICE_CONFIG, &reg_val);
 	if (show) {
-		reg_val &= mask;
-		return sprintf(buf, "%s", operating_modes[reg_val]);
+		uint8_t mode = reg_val & AD4080_OP_MODE_MSK;
+		if (mode > 3 || mode == 1) // Ensure mode is valid
+			return sprintf(buf, "Invalid Mode");
+		return sprintf(buf, "%s", operating_modes[mode]);
 	}
 
 	opmode = strtol(buf, &endptr, 10);
-	if (*endptr != '\0')
-		return -1;
+	if (*endptr != '\0' || opmode > 3 || opmode == 1) // Validate input
+		return -EINVAL;
 
-	if ((opmode == 1) || (opmode > 3))
-		return -1;
-
-	reg_val &= ~mask;
-	reg_val |= opmode;
-	ad4080_write(iio_ad4080->ad4080, AD4080_REG_DEVICE_CONFIG, reg_val);
-	return 0;
+	reg_val = (reg_val & ~AD4080_OP_MODE_MSK) | opmode;
+	return ad4080_write(iio_ad4080->ad4080, AD4080_REG_DEVICE_CONFIG, reg_val);
 }
 
 static attr_fn attr_handlers[] = {
@@ -804,6 +1142,15 @@ static attr_fn attr_handlers[] = {
 	device_mode_glob_attr_handler,
 };
 
+/**
+ * @brief Stores or shows the attribute value for the AD4080 device.
+ * @param device - The IIO device structure.
+ * @param buf - The buffer to store the attribute value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param priv - The private data associated with the attribute.
+ * @return The result of the attribute operation (success or error code).
+ */
 static int ad4080_attr_store(void *device,
 			     char *buf,
 			     uint32_t len,
@@ -818,6 +1165,15 @@ static int ad4080_attr_store(void *device,
 	return err;
 }
 
+/**
+ * @brief Shows the attribute value for the AD4080 device.
+ * @param device - The IIO device structure.
+ * @param buf - The buffer to store the attribute value.
+ * @param len - The length of the buffer.
+ * @param ch_info - The channel information.
+ * @param priv - The private data associated with the attribute.
+ * @return The result of the attribute operation (success or error code).
+ */
 static int ad4080_attr_show(void *device,
 			    char *buf,
 			    uint32_t len,
@@ -851,10 +1207,16 @@ static int32_t iio_ad4080_end_transfer(void *dev)
  *    4.1) cannot be memcpy'd directly.
  *    4.2) need to use no os circular buffer facilities to transfer data 
  */
+
+ /**
+  * @brief Submits the IIO device data for the AD4080 device.
+  * @param iio_device_data - The IIO device data structure containing the device and buffer information.
+  * @return 0 on success, or an error code on failure.
+  */
 static int32_t ad4080_submit(struct iio_device_data *iio_device_data)
 {
-	struct ad4080_dev *ad4080 = iio_device_data->dev;
-	struct iio_ad4080_desc *iio_ad4080 = ad4080_privdata(ad4080);
+	struct ad4080_dev *dev = iio_device_data->dev;
+	struct iio_ad4080_desc *iio_ad4080 = ad4080_privdata(dev);
 	struct iio_ad4080_fifo_struct *fifo = &iio_ad4080->fifo;
 	uint32_t samples = iio_device_data->buffer->samples;
 	int err;
@@ -942,6 +1304,11 @@ static struct iio_channel ad4080_ch = {
 	.ch_out = false,
 };
 
+/* @brief Handler for the FIFO full interrupt of the AD4080 device.
+ * This function reads data from the AD4080 device when the FIFO is full
+ * and completes the operation, allowing the waiter to proceed.
+ * @param isr_data - Pointer to the IIO AD4080 descriptor.
+ */
 static void iio_ad4080_fifo_full_handler(void *isr_data)
 {
 	int err;
@@ -955,6 +1322,12 @@ static void iio_ad4080_fifo_full_handler(void *isr_data)
 	return;
 }
 
+/**
+ * @brief Gets the device descriptors for the AD4080 IIO application.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param app_device_count - Pointer to store the count of application devices.
+ * @return Pointer to the array of application device descriptors, or NULL on error.
+ */
 const struct iio_app_device *iio_ad4080_get_device_descriptors(struct iio_ad4080_desc *iio_ad4080,
 							       uint32_t *app_device_count)
 {
@@ -964,6 +1337,12 @@ const struct iio_app_device *iio_ad4080_get_device_descriptors(struct iio_ad4080
 	return &iio_ad4080->app_device;
 }
 
+/**
+ * @brief Gets the AD4080 device from the IIO AD4080 descriptor.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param ad4080 - Pointer to store the AD4080 device pointer.
+ * @return 0 on success, or an error code on failure.
+ */
 int ad4080_device(struct iio_ad4080_desc *iio_ad4080,
 		  struct ad4080_dev **ad4080)
 {
@@ -973,6 +1352,12 @@ int ad4080_device(struct iio_ad4080_desc *iio_ad4080,
 	return 0;
 }
 
+/**
+ * @brief Initializes the IIO device structure for the AD4080 device.
+ * @param iio_ad4080 - The IIO AD4080 descriptor.
+ * @param iio_device - The IIO device structure to be initialized.
+ * @return 0 on success, or an error code on failure.
+ */
 int ad4080_iio_device(struct iio_ad4080_desc *iio_ad4080,
 		      struct iio_device *iio_device)
 {
@@ -993,11 +1378,17 @@ int ad4080_iio_device(struct iio_ad4080_desc *iio_ad4080,
 	return 0;
 }
 
+/**
+ * @brief Initializes the IIO AD4080 descriptor.
+ * @param iio_ad4080 - Pointer to store the initialized IIO AD4080 descriptor.
+ * @param iio_ad4080_init_param - Initialization parameters for the IIO AD4080 descriptor.
+ * @return 0 on success, or an error code on failure.
+ */
 int iio_ad4080_init(struct iio_ad4080_desc **iio_ad4080,
 		    struct iio_ad4080_init_param *iio_ad4080_init_param)
 {
 	int err;
-	struct ad4080_dev *ad4080;
+	struct ad4080_dev *dev;
 	struct ad4080_init_param *ad4080_init_param;
 	struct iio_ad4080_desc *ad4080_iio;
 	struct iio_ad4080_fifo_struct *fifo;
@@ -1013,14 +1404,14 @@ int iio_ad4080_init(struct iio_ad4080_desc **iio_ad4080,
 	ad4080_init_param->privdata_len = sizeof(struct iio_ad4080_desc) + AD4080_ADC_DATA_BUFFER_LEN;
 	/* iio ad4080 exposes just 1 iio_app_device */
 	ad4080_init_param->privdata_len += (1 * sizeof(struct iio_app_device));
-	err = ad4080_init(&ad4080, *ad4080_init_param);
+	err = ad4080_init(&dev, *ad4080_init_param);
 	if (err)
 		return err;
 
-	ad4080_iio = ad4080_privdata(ad4080);
-	ad4080_iio->ad4080 = ad4080;
+	ad4080_iio = ad4080_privdata(dev);
+	ad4080_iio->ad4080 = dev;
 	fifo = &ad4080_iio->fifo;
-	err = iio_ad4080_fifo_init(fifo, ad4080);
+	err = iio_ad4080_fifo_init(fifo, dev);
 	if (err)
 		goto err_iio_ad4080_fifo_init;
 
@@ -1046,30 +1437,32 @@ err_register_irq:
 err_set_watermark:
 	iio_ad4080_fifo_fini(fifo);
 err_iio_ad4080_fifo_init:
-	ad4080_remove(ad4080);
+	ad4080_remove(dev);
 	return err;
 }
 
 void iio_ad4080_fini(struct iio_ad4080_desc *iio_ad4080)
 {
-	struct ad4080_dev *ad4080;
+	struct ad4080_dev *dev;
 	struct iio_ad4080_fifo_struct *fifo;
 
 	if (!iio_ad4080)
 		return;
 
-	ad4080 = iio_ad4080->ad4080;
+	dev = iio_ad4080->ad4080;
 	fifo = &iio_ad4080->fifo;
 	
 	iio_ad4080_fifo_unset_watermark(fifo);
 	iio_ad4080_fifo_fini(fifo);
-	ad4080_remove(ad4080);
+	ad4080_remove(dev);
 	return;
 }
 
-
-/* AD4080 FIFO API */
-
+/**
+ * @brief Checks if the given FIFO structure is a valid IIO AD4080 FIFO.
+ * @param fifo - Pointer to the FIFO structure to check.
+ * @return true if the FIFO structure is valid, false otherwise.
+ */
 static bool is_iio_ad4080_fifo(struct iio_ad4080_fifo_struct *fifo)
 {
 	int err;
@@ -1077,34 +1470,44 @@ static bool is_iio_ad4080_fifo(struct iio_ad4080_fifo_struct *fifo)
 	return err == 0 ? true : false;
 }
 
+/**
+ * @brief IRQ handler for the FIFO full interrupt of the AD4080 device.
+ * This function is called when the FIFO is full and handles the interrupt by checking the device status.
+ */
 static void fifo_irq_handler(void *context)
 {
 	struct iio_ad4080_fifo_struct *fifo = context;
-	struct ad4080_dev *ad4080;
+	struct ad4080_dev *dev;
 	uint8_t status;
 	assert(is_iio_ad4080_fifo(fifo) == true);
-	ad4080 = fifo->ad4080;
+	dev = fifo->ad4080;
 
 	/* check if spurious FIFO Full */
-	ad4080_read(ad4080, AD4080_REG_DEVICE_STATUS, &status);
+	ad4080_read(dev, AD4080_REG_DEVICE_STATUS, &status);
 	if (status & (1 << 7)) {
 		if (fifo->isr)
 			fifo->isr(fifo->isr_data);
 
 		/* turn off the sampling */
-		ad4080_set_fifo_mode(ad4080, AD4080_FIFO_DISABLE);
+		ad4080_set_fifo_mode(dev, AD4080_FIFO_DISABLE);
 	}
 
 	return;
 }
 
+/**
+ * @brief Initializes the IIO AD4080 FIFO structure.
+ * @param fifo - Pointer to the IIO AD4080 FIFO structure to initialize.
+ * @param ad4080 - Pointer to the AD4080 device structure.
+ * @return 0 on success, or an error code on failure.
+ */
 int iio_ad4080_fifo_init(struct iio_ad4080_fifo_struct *fifo, 
-			 struct ad4080_dev *ad4080)
+			 struct ad4080_dev *dev)
 {
 	int err = -EINVAL;
 	if (fifo) {
 		memcpy(fifo->signature, IIO_AD4080_FIFO_SIGNATURE, IIO_AD4080_FIFO_SIGNATURE_LEN);
-		fifo->ad4080 = ad4080;
+		fifo->ad4080 = dev;
 		fifo->raw_fifo = NULL;
 		fifo->bufsize = 0;
 		fifo->formatted_fifo = NULL;
@@ -1257,9 +1660,11 @@ void iio_ad4080_fifo_unregister_irq(struct iio_ad4080_fifo_struct *fifo,
 	return;
 }
 
-/* set the watermark on the AD4080. 
- * if a raw fifo buffer is not available, create it.
- * if one already exists, then resize it to fit the new watermark level.
+/**
+ * @brief Sets the FIFO watermark for the AD4080 device.
+ * @param fifo - Pointer to the IIO AD4080 FIFO structure.
+ * @param watermark - The desired watermark value (number of samples).
+ * @return 0 on success, or an error code on failure.
  */
 int iio_ad4080_fifo_set_watermark(struct iio_ad4080_fifo_struct *fifo,
 		const size_t watermark)

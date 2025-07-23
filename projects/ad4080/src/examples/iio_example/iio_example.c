@@ -33,8 +33,9 @@
 *******************************************************************************/
 #include <stdio.h>
 #include <iio_example.h>
+#include <no_os_print_log.h>
 
-#include <iio_app.h>
+//#include <iio_app.h>
 #include <iio_ad4080.h>
 
 static struct ad4080_init_param default_ad4080_init_param = {

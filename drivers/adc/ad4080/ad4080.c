@@ -2,8 +2,9 @@
  *   @file   ad4080.c
  *   @brief  Implementation of AD4080 Driver.
  *   @author Antoniu Miclaus (antoniu.miclaus@analog.com)
+ *   @author Niel Acuna (niel.acuna@analog.com)
 ********************************************************************************
- * Copyright 2023(c) Analog Devices, Inc.
+ * Copyright 2023-2025(c) Analog Devices, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:

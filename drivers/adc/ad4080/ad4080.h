@@ -2,8 +2,9 @@
  *   @file   ad4080.h
  *   @brief  Header file of AD4080 Driver.
  *   @author Antoniu Miclaus (antoniu.miclaus@analog.com)
+ *   @author Niel Acuna (niel.acuna@analog.com)
 ********************************************************************************
- * Copyright 2023(c) Analog Devices, Inc.
+ * Copyright 2023-2025(c) Analog Devices, Inc.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
@@ -123,6 +124,15 @@
 #define BYTE_ADDR_L				NO_OS_GENMASK(7, 0)
 #define AD4080_CHIP_ID				NO_OS_GENMASK(2, 0)
 #define AD4080_FIFO_SIZE		  NO_OS_BIT(14)
+#define AD4080_FIFO_DEPTH 	16384 	/* AD4080 is 16K deep maximum */
+#define AD4080_MAX_FIFO_WATERMARK 	(AD4080_FIFO_DEPTH)
+#define AD4080_LAST_REG_ADDR 	AD4080_REG_FILTER_CONFIG
+#define AD4080_SINC_DECIMATION_MSK		NO_OS_GENMASK(6, 3)
+#define AD4080_ADC_GRANULARITY 	20 	/* 20 Bits precision */
+#define ADC_REF_VOLTAGE 	3.3
+#define AD4080_ADC_MAX_RESOLUTION_VAL 	((1 << AD4080_ADC_GRANULARITY) - 1) 	
+#define AD4080_DEFAULT_SCALE 	((((double)ADC_REF_VOLTAGE) / AD4080_ADC_MAX_RESOLUTION_VAL) * 1E3L) /* 1E3 converts volts to millivolts: 1 x 10^3 = 1000. */
+#define OFFSET_CORRECTION_NEGATIVE_LIMIT 	0x800
 
 /** AD4080 Sequential Addressing Behavior */
 enum ad4080_addr_asc {
@@ -258,8 +268,6 @@ struct ad4080_gp_desc {
  * @brief ad4080 Device structure.
  */
 struct ad4080_dev {
-	/* Old SPI. Mark is as deprecated for now */
-	struct no_os_spi_desc __attribute__((deprecated)) *spi_desc;
 	/* SPI */
 	struct ad4080_spi_desc 	cfg;
 	struct ad4080_spi_desc 	data;
@@ -315,8 +323,6 @@ struct ad4080_gp_init_param {
  * @brief ad4080 Device initialization parameters.
  */
 struct ad4080_init_param {
-	/* Old SPI. mark it as deprecated for now */
-	struct no_os_spi_init_param __attribute__((deprecated)) *spi_init;
 	/* SPI */
 	struct ad4080_spi_init_param cfg;
 	struct ad4080_spi_init_param data;
@@ -356,6 +362,7 @@ struct ad4080_init_param {
 	size_t privdata_len;
 };
 
+/** Retrieve the private data associated with the AD4080 device. */
 static inline void *ad4080_privdata(struct ad4080_dev *dev)
 {
 	if (!dev)
@@ -363,6 +370,7 @@ static inline void *ad4080_privdata(struct ad4080_dev *dev)
 	return dev->privdata;
 }
 
+/** Reads data into a register */
 int ad4080_read_data(struct ad4080_dev *dev, uint8_t *buf, size_t len);
 
 /** Writes data into a register.  */
