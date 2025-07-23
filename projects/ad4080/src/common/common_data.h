@@ -17,7 +17,7 @@ extern struct no_os_spi_init_param data_spi_init_param;
 extern struct no_os_gpio_init_param cfg_ss_init_param;
 extern struct no_os_spi_init_param cfg_spi_init_param;
 
-extern struct no_os_uart_init_param iio_uart_init_param;
+extern struct no_os_uart_init_param uart_init_param;
 
 extern struct no_os_uart_init_param serial_log_init_param;
 

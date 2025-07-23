@@ -38,6 +38,13 @@
 
 /******************************************************************************/
 
+/**
+ * @brief Read from the AD4080 FIFO.
+ * @param dev - The device structure.
+ * @param buf - Receive data buffer.
+ * @param len - Length of the buf.
+ * @return 0 in case of success, negative error code otherwise.
+ */
 int ad4080_read_data(struct ad4080_dev *dev, uint8_t *buf, size_t len)
 {
 	int err;

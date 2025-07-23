@@ -69,7 +69,7 @@ extern struct max_gpio_init_param max_gpio_extra;
 
 /* Data SPI */
 #define DATA_SPI_DEVICE_ID 	2
-#define DATA_SPI_SPEED 		12000000 /* 1 Mhz */
+#define DATA_SPI_SPEED 		1000000 /* 1 Mhz */
 #define DATA_SPI_SS 		0
 #define DATA_SPI_MODE 		NO_OS_SPI_MODE_3
 #define DATA_SPI_BIT_ORDER 	NO_OS_SPI_BIT_ORDER_MSB_FIRST
@@ -87,7 +87,7 @@ extern struct max_spi_init_param data_spi_extra;
 
 /* Config SPI */
 #define CFG_SPI_DEVICE_ID 	2
-#define CFG_SPI_SPEED 		12000000 /* 1 Mhz */
+#define CFG_SPI_SPEED 		1000000 /* 1 Mhz */
 #define CFG_SPI_SS 		0
 #define CFG_SPI_MODE 		NO_OS_SPI_MODE_3
 #define CFG_SPI_BIT_ORDER 	NO_OS_SPI_BIT_ORDER_MSB_FIRST

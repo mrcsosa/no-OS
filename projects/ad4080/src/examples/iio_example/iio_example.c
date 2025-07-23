@@ -33,6 +33,7 @@
 *******************************************************************************/
 #include <stdio.h>
 #include <iio_example.h>
+#include <no_os_print_log.h>
 
 #include <iio_app.h>
 #include <iio_ad4080.h>
@@ -170,7 +171,7 @@ int iio_example_main(void)
 
 	iio_app_init_param.devices = &single_ad4080_iio_app_device;
 	iio_app_init_param.nb_devices = 1;
-	iio_app_init_param.uart_init_params = iio_uart_init_param;
+	iio_app_init_param.uart_init_params = uart_init_param;
 	err = iio_app_init(&iio_app, iio_app_init_param);
 	if (err)
 		goto err_iio_app_init;

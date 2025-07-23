@@ -258,8 +258,6 @@ struct ad4080_gp_desc {
  * @brief ad4080 Device structure.
  */
 struct ad4080_dev {
-	/* Old SPI. Mark is as deprecated for now */
-	struct no_os_spi_desc __attribute__((deprecated)) *spi_desc;
 	/* SPI */
 	struct ad4080_spi_desc 	cfg;
 	struct ad4080_spi_desc 	data;
@@ -315,8 +313,6 @@ struct ad4080_gp_init_param {
  * @brief ad4080 Device initialization parameters.
  */
 struct ad4080_init_param {
-	/* Old SPI. mark it as deprecated for now */
-	struct no_os_spi_init_param __attribute__((deprecated)) *spi_init;
 	/* SPI */
 	struct ad4080_spi_init_param cfg;
 	struct ad4080_spi_init_param data;

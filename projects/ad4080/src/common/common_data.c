@@ -86,7 +86,7 @@ struct no_os_spi_init_param cfg_spi_init_param = {
 	.extra = CFG_SPI_EXTRA,
 };
 
-struct no_os_uart_init_param iio_uart_init_param = {
+struct no_os_uart_init_param uart_init_param = {
 	.device_id = IIO_UART_DEVICE_ID,
 	.irq_id = IIO_UART_IRQ_ID,
 	.asynchronous_rx = IIO_UART_ASYNC_RX,
