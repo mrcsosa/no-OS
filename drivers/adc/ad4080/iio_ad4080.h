@@ -45,7 +45,7 @@
 #define IIO_AD4080_FIFO_SIGNATURE 	"IIO_AD4080_FIFO"
 #define AD4080_IIO_APP_DEVICE_NAME_LEN 	16
 #define AD4080_ADC_DATA_BUFFER_LEN 	65536 /* 16K_watermark * 4_byte_storage per sample */
-
+#define IIO_AD4080_COMPLETION_SIGNATURE 	0xdeadc0de
 
 // #define AD4080_FIFO_DEPTH 	16384 	/* AD4080 is 16K deep maximum */
 
