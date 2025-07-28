@@ -35,6 +35,7 @@
 #include "ssd_1306.h"
 #include "no_os_error.h"
 #include "no_os_spi.h"
+#include "no_os_i2c.h"
 #include "no_os_delay.h"
 #include <string.h>
 
@@ -52,10 +53,47 @@ const struct display_controller_ops ssd1306_ops = {
 	.display_on_off = &ssd_1306_display_on_off,
 	.move_cursor = &ssd_1306_move_cursor,
 	.print_char = &ssd_1306_print_ascii,
-	.remove = &ssd_1306_remove
+	.remove = &ssd_1306_remove,
+	.print_buffer = &ssd_1306_print_buffer
 };
 
 extern const uint8_t no_os_chr_8x8[128][8];
+
+int32_t ssd1306_buffer_transmit(ssd_1306_extra *extra_param, uint8_t *command,
+				int length, enum transmit_type is_data)
+{
+	switch (extra_param->comm_type) {
+	case SSD1306_I2C: {
+		uint8_t buff_tmp[length + 1];
+		if (is_data == SSD1306_DATA)	/* Data transmit */
+			buff_tmp[0] = 0x40;
+		else							/* Command transmit */
+			buff_tmp[0] = 0x00;
+		memcpy(&buff_tmp[1], command, length);
+		return no_os_i2c_write(extra_param->i2c_desc, buff_tmp, length + 1, 1);
+	}
+	case SSD1306_SPI: {
+		int32_t ret;
+		if (is_data == SSD1306_DATA) {	/* Data transmit */
+			if (extra_param->dc_pin) {
+				ret = no_os_gpio_set_value(extra_param->dc_pin, SSD1306_DC_DATA);
+				if (ret != 0)
+					return -EFAULT;
+			}
+		} else {						/* Command transmit */
+			if (extra_param->dc_pin) {
+				ret = no_os_gpio_set_value(extra_param->dc_pin, SSD1306_DC_CMD);
+				if (ret != 0)
+					return -EFAULT;
+			}
+		}
+		return no_os_spi_write_and_read(extra_param->spi_desc, command, length);
+	}
+	default:
+		return -EFAULT;
+	}
+}
+
 
 /***************************************************************************//**
  * @brief Initializes ssd_1306 for display screening.
@@ -70,78 +108,140 @@ int32_t ssd_1306_init(struct display_dev *device)
 	ssd_1306_extra *extra;
 
 	extra = device->extra;
-	ret = no_os_spi_init(&extra->spi_desc, extra->spi_ip);
+	switch (extra->comm_type) {
+	case SSD1306_SPI:
+		ret = no_os_spi_init(&extra->spi_desc, extra->spi_ip);
+		break;
+	case SSD1306_I2C:
+		ret = no_os_i2c_init(&extra->i2c_desc, extra->i2c_ip);
+		break;
+	default:
+		ret = -EFAULT;
+		break;
+	}
 	if (ret != 0)
-		return -1;
-	ret = no_os_gpio_get(&extra->dc_pin, extra->dc_pin_ip);
-	if (ret != 0)
-		return -1;
-	ret = no_os_gpio_get(&extra->reset_pin, extra->reset_pin_ip);
-	if (ret != 0)
-		return -1;
+		return ret;
+
+	if (extra->dc_pin_ip) {
+		ret = no_os_gpio_get(&extra->dc_pin, extra->dc_pin_ip);
+		if (ret != 0)
+			return -1;
+	}
+	if (extra->reset_pin_ip) {
+		ret = no_os_gpio_get(&extra->reset_pin, extra->reset_pin_ip);
+		if (ret != 0)
+			return -1;
+	}
 
 	// initial pin state
-	ret = no_os_gpio_direction_output(extra->dc_pin, SSD1306_DC_CMD);
-	if (ret != 0)
-		return -1;
-	ret = no_os_gpio_direction_output(extra->reset_pin, SSD1306_RST_OFF);
+	if (extra->reset_pin) {
+		ret = no_os_gpio_direction_output(extra->reset_pin, SSD1306_RST_OFF);
+		if (ret != 0)
+			return -1;
+	}
+
+	command[0] = 0xAE;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
 	if (ret != 0)
 		return -1;
 
-	command[0] = 0xAE;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 1U);
-	if (ret != 0)
-		return -1;
-	ret = no_os_gpio_set_value(extra->reset_pin, SSD1306_RST_ON);
-	if (ret != 0)
-		return -1;
+	if (extra->reset_pin) {
+		ret = no_os_gpio_set_value(extra->reset_pin, SSD1306_RST_ON);
+		if (ret != 0)
+			return -1;
+
+	}
 	// Post reset delay, Treset=3us (See datasheet -> power on sequence)
 	no_os_udelay(3U);
-	ret = no_os_gpio_set_value(extra->reset_pin, SSD1306_RST_OFF);
+	if (extra->reset_pin) {
+		ret = no_os_gpio_set_value(extra->reset_pin, SSD1306_RST_OFF);
+		if (ret != 0)
+			return -1;
+	}
+
+	no_os_udelay(3U);
+	command[0] = 0xA8;
+	command[1] = 0x3F;
+	ret = ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
 	if (ret != 0)
 		return -1;
-	// charge pump
+
+	no_os_udelay(3U);
+	command[0] = 0xD3;
+	command[1] = 0x00;
+	ret = ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0x40;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0xA0;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0xC0;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0xDA;
+	command[1] = 0xD2;
+	ret = ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0x81;
+	command[1] = 0x7F;
+	ret = ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0xA4;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0xA7;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
+	command[0] = 0xD5;
+	command[1] = 0x80;
+	ret = ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
+	if (ret != 0)
+		return -1;
+
+	no_os_udelay(3U);
 	command[0] = 0x8D;
 	command[1] = 0x14;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 2U);
+	ret = ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
 	if (ret != 0)
 		return -1;
-	// pre-charge
-	command[0] = 0xD9;
-	command[1] = 0xF1;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 2U);
+
+	no_os_udelay(3U);
+	command[0] = 0xAF;
+	ret = ssd1306_buffer_transmit(extra, command, 1U, SSD1306_CMD);
 	if (ret != 0)
 		return -1;
-	// set contrast
-	command[0] = 0x81;
-	command[1] = 0xFF;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 2U);
-	if (ret != 0)
-		return -1;
-	// set segment remap
-	command[0] = 0xA0;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 1U);
-	if (ret != 0)
-		return -1;
-	// set scan direction
-	command[0] = 0xC0;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 1U);
-	if (ret != 0)
-		return -1;
-	// set COM pin
-	command[0] = 0xDA;
+
+	// set addressing mode
+	no_os_udelay(3U);
+	command[0] = 0x20;
 	command[1] = 0x00;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 2U);
-	if (ret != 0)
-		return -1;
-	// show written memory on screen
-	command[0] = 0xA4;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 1U);
-	if (ret != 0)
-		return -1;
-	command[0] = 0x20;	// memory addressing mode
-	command[1] = 0x00;	// horizontal addressing
-	return no_os_spi_write_and_read(extra->spi_desc, command, 2U);
+	return ssd1306_buffer_transmit(extra, command, 2U, SSD1306_CMD);
 }
 
 /***************************************************************************//**
@@ -158,11 +258,9 @@ int32_t ssd_1306_display_on_off(struct display_dev *device, uint8_t on_off)
 	ssd_1306_extra *extra;
 
 	extra = device->extra;
-	ret = no_os_gpio_set_value(extra->dc_pin, SSD1306_DC_CMD);
-	if (ret != 0)
-		return -1;
+
 	command = (on_off == true) ? SSD1306_DISP_ON : SSD1306_DISP_OFF;
-	return no_os_spi_write_and_read(extra->spi_desc, &command, 1U);
+	return ssd1306_buffer_transmit(extra, &command, 1U, SSD1306_CMD);
 }
 
 /***************************************************************************//**
@@ -181,19 +279,19 @@ int32_t ssd_1306_move_cursor(struct display_dev *device, uint8_t row,
 	ssd_1306_extra *extra;
 
 	extra = device->extra;
-	ret = no_os_gpio_set_value(extra->dc_pin, SSD1306_DC_CMD);
-	if (ret != 0)
-		return -1;
+
 	command[0] = 0x21;
 	command[1] = column * 8;
 	command[2] = device->cols_nb * 8 - 1U;
-	ret = no_os_spi_write_and_read(extra->spi_desc, command, 3U);
+	ret = ssd1306_buffer_transmit(extra, command, 3U, SSD1306_CMD);
 	if (ret != 0)
-		return -1;
+		return -EFAULT;
 	command[0] = 0x22;
 	command[1] = row;
 	command[2] = device->rows_nb - 1U;
-	return no_os_spi_write_and_read(extra->spi_desc, command, 3U);;
+	ret = ssd1306_buffer_transmit(extra, command, 3U, SSD1306_CMD);
+	if (ret != 0)
+		return -EFAULT;
 }
 
 /***************************************************************************//**
@@ -216,11 +314,9 @@ int32_t ssd_1306_print_ascii(struct display_dev *device, uint8_t ascii,
 	extra = device->extra;
 	ret = ssd_1306_move_cursor(device, row, column);
 	if (ret != 0)
-		return -1;
-	ret = no_os_gpio_set_value(extra->dc_pin, SSD1306_DC_DATA);
-	if (ret != 0)
-		return -1;
-	return no_os_spi_write_and_read(extra->spi_desc, ch, SSD1306_CHARSZ);
+		return -EFAULT;
+
+	return ssd1306_buffer_transmit(extra, ch, SSD1306_CHARSZ, SSD1306_DATA);
 }
 
 /***************************************************************************//**
@@ -235,11 +331,62 @@ int32_t ssd_1306_remove(struct display_dev *device)
 	ssd_1306_extra *extra;
 
 	extra = device->extra;
-	ret = no_os_gpio_remove(extra->reset_pin);
+	if (extra->reset_pin) {
+		ret = no_os_gpio_remove(extra->reset_pin);
+		if (ret != 0)
+			return -EFAULT;
+	}
+	if (extra->dc_pin) {
+		ret = no_os_gpio_remove(extra->dc_pin);
+		if (ret != 0)
+			return -EFAULT;
+	}
+
+	if (extra->comm_type == SSD1306_SPI)
+		return no_os_spi_remove(extra->spi_desc);
+	else if (extra->comm_type == SSD1306_I2C)
+		return no_os_i2c_remove(extra->i2c_desc);
+
+	return 0;
+}
+
+/**
+ * @brief Print entire screen buffer
+ *
+ * @param device - The device structure.
+ * @param buffer - The buffer to be printed.
+ * @return Returns 0 in case of success or negative error code otherwise.
+ */
+int32_t ssd_1306_print_buffer(struct display_dev *device, char *buffer)
+{
+	int32_t ret;
+
+	ssd_1306_extra *extra;
+
+	if (!device || !buffer)
+		return -ENOMEM;
+
+	extra = device->extra;
+
+	ret = ssd_1306_move_cursor(device, 0, 0);
 	if (ret != 0)
-		return -1;
-	ret = no_os_gpio_remove(extra->dc_pin);
-	if (ret != 0)
-		return -1;
-	return no_os_spi_remove(extra->spi_desc);
+		return ret;
+
+	uint32_t nr_of_frame_bytes = device->cols_nb * device->rows_nb / 8;
+	uint8_t nr_of_sendable_frames = nr_of_frame_bytes / 254;
+	uint8_t last_frame_bytes = nr_of_frame_bytes % 254;
+
+	for (int i = 0; i < nr_of_sendable_frames; i++) {
+		ret = ssd1306_buffer_transmit(extra, &buffer[i * 254], 254, SSD1306_DATA);
+		if (ret != 0)
+			return ret;
+	}
+	if (last_frame_bytes > 0) {
+		ret = ssd1306_buffer_transmit(extra, &buffer[nr_of_sendable_frames * 254],
+					      last_frame_bytes, SSD1306_DATA);
+		if (ret != 0)
+			return ret;
+	}
+
+	return 0;
 }

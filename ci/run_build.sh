@@ -73,7 +73,19 @@ build_cppcheck() {
 }
 
 build_drivers() {
-    sudo apt-get install gcc-arm-none-eabi libnewlib-arm-none-eabi
+    # install the required packages and their dependencies
+    wget https://launchpad.net/ubuntu/+source/binutils-arm-none-eabi/15build1/+build/23239027/+files/binutils-arm-none-eabi_2.38-3ubuntu1+15build1_amd64.deb
+    sudo dpkg -i ./binutils-arm-none-eabi_2.38-3ubuntu1+15build1_amd64.deb
+
+    wget https://launchpad.net/ubuntu/+source/gcc-arm-none-eabi/15:10.3-2021.07-4/+build/22422757/+files/gcc-arm-none-eabi_10.3-2021.07-4_amd64.deb
+    sudo dpkg -i ./gcc-arm-none-eabi_10.3-2021.07-4_amd64.deb
+
+    wget https://launchpad.net/ubuntu/+source/newlib/3.3.0-1.3/+build/22978164/+files/libnewlib-dev_3.3.0-1.3_all.deb
+    sudo dpkg -i ./libnewlib-dev_3.3.0-1.3_all.deb
+
+    wget https://launchpad.net/ubuntu/+source/newlib/3.3.0-1.3/+build/22978164/+files/libnewlib-arm-none-eabi_3.3.0-1.3_all.deb
+    sudo dpkg -i ./libnewlib-arm-none-eabi_3.3.0-1.3_all.deb
+
     make -j${NUM_JOBS} -C ./drivers -f Makefile
 }
 
@@ -83,11 +95,15 @@ build_documentation() {
     pip3 install pip --upgrade
     pip3 install -r ${TOP_DIR}/doc/sphinx/source/requirements.txt
     # Install a recent version of doxygen
-	DOXYGEN_URL="https://sourceforge.net/projects/doxygen/files/rel-1.8.17/doxygen-1.8.17.src.tar.gz/"
+	DOXYGEN_URL="https://sourceforge.net/projects/doxygen/files/rel-1.13.2/doxygen-1.13.2.src.tar.gz/"
+	DOXYGEN_THEME_URL="https://github.com/analogdevicesinc/doctools/releases/download/latest/adi-harmonic-doxygen-theme.tar.gz"
 	mkdir -p "${DEPS_DIR}"
 	cd ${DEPS_DIR}
 	[ -d "doxygen" ] || {
 		mkdir doxygen && wget --quiet -O - ${DOXYGEN_URL} | tar --strip-components=1 -xz -C doxygen
+	}
+	[ -d "doxygen-theme" ] || {
+		mkdir doxygen-theme && wget --quiet -O - ${DOXYGEN_THEME_URL} | tar --strip-components=1 -xz -C doxygen-theme
 	}
 
     # Install Doxygen

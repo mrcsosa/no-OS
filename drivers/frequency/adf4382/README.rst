@@ -1,17 +1,19 @@
 ADF4382 no-OS driver
 ====================
 
+.. no-os-doxygen::
+
 Supported Devices
 -----------------
 
-* `ADF4382 <www.analog.com/en/products/adf4382.html>`_
-* `ADF4382A <www.analog.com/en/products/adf4382a.html>`_
-* `ADF43823 <www.analog.com/en/products/adf43823.html>`_
+* `ADF4382 <https://www.analog.com/en/products/adf4382.html>`_
+* `ADF4382A <https://www.analog.com/en/products/adf4382a.html>`_
+* `ADF43823 <https://www.analog.com/en/products/adf43823.html>`_
 
 Overview
 --------
 
-The `ADF4382 <www.analog.com/en/products/adf4382.html>`_ is a high performance,
+The `ADF4382 <https://www.analog.com/en/products/adf4382.html>`_ is a high performance,
 ultralow jitter, Frac-N PLL with integrated VCO ideally suited for LO generation
 for 5G applications or data converter clock applications. The high performance
 PLL has a figure of merit of -238 dBc/Hz, low 1/f Noise and high PFD frequency
@@ -21,7 +23,7 @@ integrated jitter. The ADF4382 can generate frequencies from 687.5 MHz to
 sub-harmonic filters.
 
 For multiple data converter clock applications, the
-`ADF4382 <www.analog.com/en/products/adf4382.html>`_ automatically aligns its
+`ADF4382 <https://www.analog.com/en/products/adf4382.html>`_ automatically aligns its
 output to the input reference edge by including the output divider in the PLL
 feedback loop. For applications that require deterministic delay or delay
 adjustment capability, a programmable reference to output delay with <1ps
@@ -94,7 +96,7 @@ the value in the same range.
 
 In order to determine which value corresponds to your design charge pump
 current, please refer to the datasheet
-`ADF4382 <www.analog.com/en/products/adf4382.html>`_ in the register details
+`ADF4382 <https://www.analog.com/en/products/adf4382.html>`_ in the register details
 section for register REG001F.
 
 Bleed Current Configuration
@@ -174,6 +176,20 @@ the fast calibration Look up Table.
 '1' starts fast calibration LUT generation, and '0' means this function is 
 inactive. The function defaults to '0' after running fast calibration LUT 
 generation. 
+
+**adf4382_set_en_lut_calibration** function enables/disables the lookup table 
+Calibration. '1' enables LUT calibration. '0' disables LUT calibration and
+reverts to normal auto calibration.
+
+ADF4382 Fast Calibration
+------------------------
+Fast calibration uses **adf4382_set_en_fast_calibration** to initialized Fast 
+calibration. It computes the minimum NDIV value and the minimum VCO frequency
+is readback through the frequency counter only if the device is ADF4382A, 
+else the minimum is defined and used to generate the fast calibration Look up Table.
+This function runs only once after the driver initialization and
+**adf4382_set_en_fast_calibration** should not be called again after the
+initialization.
 
 **adf4382_set_en_lut_calibration** function enables/disables the lookup table 
 Calibration. '1' enables LUT calibration. '0' disables LUT calibration and
@@ -305,11 +321,11 @@ The attributes are:
 * ezsync_setup - enables ezsync setup for synchronization with external signal.
 * timed_sync_setup - enables timed sync setup for synchronization with external 
 					 signal.
+* fastcal_lut_en - toggles between fast calibration and normal auto
+				   calibration.
 * fastcal_en - this enables fast calibration feature post initialization.
 			   It enables the Lookup Table LUT Calibration after fast calibration
 			   initialzation routine is complete.
-* fastcal_lut_en - toggles between fast calibration and normal auto
-				   calibration.
 
 Device Channels
 ---------------

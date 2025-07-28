@@ -219,6 +219,10 @@ static int32_t stm32_init_timer(struct stm32_pwm_desc *desc,
 			sSlaveConfig.InputTrigger = TIM_TS_ITR3;
 			sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_ITR3;
 			break;
+		case PWM_TS_ETR:
+			sSlaveConfig.InputTrigger = TIM_TS_ETRF;
+			sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_ETRMODE1;
+			break;
 		default:
 			break;
 		}
@@ -231,8 +235,25 @@ static int32_t stm32_init_timer(struct stm32_pwm_desc *desc,
 			sSlaveConfig.SlaveMode = TIM_SLAVEMODE_TRIGGER;
 			sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
 			break;
+		case STM32_PWM_SM_GATED:
+			sSlaveConfig.SlaveMode = TIM_SLAVEMODE_GATED;
+			sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+			break;
 		default:
 			return -EINVAL;
+		}
+
+		if (sparam->trigger_source == PWM_TS_ETR) {
+			switch (sparam->trigger_polarity) {
+			case PWM_TRIG_POL_RISING:
+				sSlaveConfig.TriggerPolarity = TIM_TRIGGERPOLARITY_NONINVERTED;
+				break;
+			case PWM_TRIG_POL_FALLING:
+				sSlaveConfig.TriggerPolarity = TIM_TRIGGERPOLARITY_INVERTED;
+				break;
+			default:
+				return -EINVAL;
+			}
 		}
 	}
 
@@ -793,7 +814,7 @@ int32_t stm32_pwm_remove(struct no_os_pwm_desc *desc)
 		return -EINVAL;
 	}
 
-	ret = no_os_gpio_remove(extra->gpio);
+	ret = no_os_gpio_remove(desc->pwm_gpio);
 	if (ret)
 		return ret;
 
@@ -966,10 +987,17 @@ int32_t stm32_pwm_disable(struct no_os_pwm_desc *desc)
 		if (sparam->dma_enable)
 			__HAL_TIM_DISABLE_DMA(htimer,  timer_map[sparam->timer_chn]);
 
-		if (sparam->complementary_channel)
-			ret = HAL_TIMEx_PWMN_Stop(htimer, chn_num);
-		else
-			ret = HAL_TIM_PWM_Stop(htimer, chn_num);
+		if (desc->irq_id) {
+			if (sparam->complementary_channel)
+				ret = HAL_TIMEx_PWMN_Stop_IT(htimer, chn_num);
+			else
+				ret = HAL_TIM_PWM_Stop_IT(htimer, chn_num);
+		} else {
+			if (sparam->complementary_channel)
+				ret = HAL_TIMEx_PWMN_Stop(htimer, chn_num);
+			else
+				ret = HAL_TIM_PWM_Stop(htimer, chn_num);
+		}
 
 		if (ret != HAL_OK) {
 			return -EIO;

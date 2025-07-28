@@ -286,6 +286,8 @@ int no_os_i3c_remove(struct no_os_i3c_desc *desc)
 		it++;
 	}
 
+	no_os_i3c_remove_bus(bus_desc);
+
 	/* Only error case is !desc */
 	desc->platform_ops->i3c_ops_remove(desc);
 	no_os_free(desc);
@@ -295,7 +297,7 @@ int no_os_i3c_remove(struct no_os_i3c_desc *desc)
 
 /**
  * @brief Free the resources allocated by no_os_i3c_init_bus.
- * Must remove all devices first, if not, -EFAULT is returned.
+ * Must remove all devices first, if not, -EBUSY is returned.
  * @param desc - The I3C bus descriptor.
  * @return 0 in case of success, error code otherwise.
  */
@@ -312,7 +314,7 @@ int no_os_i3c_remove_bus(struct no_os_i3c_bus_desc *desc)
 	/* Verify if all devices are removed */
 	for (it = desc->devs; it < desc->devs + NO_OS_I3C_MAX_DEV_NUMBER; it++) {
 		if (*it)
-			return -EFAULT;
+			return -EBUSY;
 	}
 
 	no_os_mutex_remove(desc->mutex);
@@ -695,4 +697,52 @@ void no_os_i3c_attach_callback(struct no_os_i3c_desc *desc,
 void no_os_i3c_detach_callback(struct no_os_i3c_desc *desc)
 {
 	no_os_i3c_attach_callback(desc, NULL);
+}
+
+/**
+ * @brief Transfer a list of messages using DMA.
+ * Non-blocking, invokes a callback after the last message is concluded.
+ * @param desc - The I3C descriptor.
+ * @param msgs - The list of messages to transfer.
+ * @param len - The number of messages to transfer.
+ * @param callback - The callback to invoke after the transfer is concluded.
+ * @param ctx - The context to pass to the callback.
+ * @return 0 in case of success, errno codes otherwise.
+ */
+int32_t no_os_i3c_transfer_dma_async(struct no_os_i3c_desc *desc,
+				     struct no_os_i3c_msg *msgs,
+				     uint32_t len,
+				     void (*callback)(void *),
+				     void *ctx)
+{
+	if (!desc || !desc->platform_ops)
+		return -EINVAL;
+
+	if (!desc->platform_ops->i3c_ops_transfer_dma_async)
+		return -ENOSYS;
+
+	no_os_mutex_lock(desc->bus->mutex);
+	return desc->platform_ops->i3c_ops_transfer_dma_async(
+		       desc, msgs, len, callback, ctx);
+}
+
+/**
+ * @brief Abort the ongoing DMA transaction
+ * @param desc - The I3C descriptor.
+ * @return 0 in case of success, errno codes otherwise.
+ */
+int32_t no_os_i3c_transfer_abort(struct no_os_i3c_desc *desc)
+{
+	int32_t ret;
+
+	if (!desc || !desc->platform_ops)
+		return -EINVAL;
+
+	if (!desc->platform_ops->i3c_ops_transfer_abort)
+		return -ENOSYS;
+
+	ret = desc->platform_ops->i3c_ops_transfer_abort(desc);
+	no_os_mutex_unlock(desc->bus->mutex);
+
+	return ret;
 }

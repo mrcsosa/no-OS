@@ -3,6 +3,7 @@
  *   @brief  Header file for adf4377 Driver.
  *   @author Antoniu Miclaus (antoniu.miclaus@analog.com)
  *   @author  Jude Osemene (jude.osemene@analog.com)
+ *   @author Sirac Kucukarabacioglu (sirac.kucukarabacioglu@analog.com)
 ********************************************************************************
  * Copyright 2025(c) Analog Devices, Inc.
  *
@@ -109,10 +110,10 @@
 #define ADF4377_VENDOR_ID_LSB           0x456
 
 /* ADF4377 REG000D Bit Definition */
-#define ADF4377_VENDOR_ID_MSB			0x456
+#define ADF4377_VENDOR_ID_MSB		0x456
 
 /* ADF4377 REG000F Bit Definition */
-#define ADF4377_R00F_RSV1				0x14
+#define ADF4377_R00F_RSV1		0x14
 
 /* ADF4377 REG0010 Map*/
 #define ADF4377_N_INT_LSB_MSK		NO_OS_GENMASK(7, 0)
@@ -229,8 +230,8 @@
 #define ADF4377_1V8_LOGIC               0x0
 #define ADF4377_3V3_LOGIC               0x1
 
-#define ADF4377_R_DEL_MIN               0x00
-#define ADF4377_R_DEL_MAX               0x7F
+#define ADF4377_R_N_DEL_MIN               0x00
+#define ADF4377_R_N_DEL_MAX               0x7F
 
 /* ADF4377 REG0019 Map */
 #define ADF4377_CLKOUT2_OP_MSK		NO_OS_GENMASK(7, 6)
@@ -523,7 +524,23 @@
 #define ADF4377_O_VCO_BIAS_M_VCO        0x1
 
 /* ADF4377 REG0042 Map */
+#define ADF4377_R042_RSV5_MSK		NO_OS_BIT(7)
+#define ADF4377_PD_SR_MON_MSK		NO_OS_BIT(6)
+#define ADF4377_PD_SR_MON(x)            no_os_field_prep(ADF4377_PD_SR_MON_MSK, x)
+#define ADF4377_SR_SEL_MSK		NO_OS_BIT(5)
+#define ADF4377_SR_SEL(x)               no_os_field_prep(ADF4377_SR_SEL_MSK, x)
+#define ADF4377_RST_SR_MON_MSK		NO_OS_BIT(4)
+#define ADF4377_RST_SR_MON(x)           no_os_field_prep(ADF4377_RST_SR_MON_MSK, x)
+#define ADF4377_R042_RSV1_MSK		NO_OS_GENMASK(3, 0)
+
+/* ADF4377 REG0042 Bit Definition */
 #define ADF4377_R042_RSV1               0x05
+
+/* ADF4377 REG0043 Map*/
+#define ADF4377_INV_SR_MSK              NO_OS_BIT(7)
+#define ADF4377_INV_SR(x)               no_os_field_prep(ADF4377_INV_SR_MSK, x)
+#define ADF4377_SR_DEL_MSK              NO_OS_GENMASK(6, 0)
+#define ADF4377_SR_DEL(x)               no_os_field_prep(ADF4377_SR_DEL_MSK, x)
 
 /* ADF4377 REG0045 Map */
 #define ADF4377_ADC_ST_CNV_MSK		NO_OS_BIT(0)
@@ -596,6 +613,8 @@
 #define ADF4377_OUT_PWR_MAX		    ADF4377_CLKOUT_DIV_REG_VAL_MAX
 #define ADF4377_CLKIN_REF_MIN		    10000000
 #define ADF4377_CLKIN_REF_MAX		    10000000000U
+#define ADF4377_SR_DEL_MAX		    127
+#define ADF4377_SR_MON_DELAY_US		    100U
 
 /* ADF4377 Extra Definitions */
 #define ADF4377_SPI_SCRATCHPAD_TEST_A	    0xA5u
@@ -687,6 +706,12 @@ struct adf4377_dev {
 	uint8_t	clkout_op;
 	/** Bleed Word */
 	uint16_t bleed_word;
+	/** sr_del adjust */
+	uint8_t sr_del_adj;
+	/** sr_inv adjust */
+	uint8_t sr_inv;
+	/** sysrefout */
+	bool sysrefout;
 };
 
 /** ADF4377 SPI write */
@@ -758,8 +783,41 @@ int adf4377_get_rfout_divider(struct adf4377_dev *dev, int8_t *div);
 /* ADF4377 Scratchpad check */
 int adf4377_check_scratchpad(struct adf4377_dev *dev);
 
+/** ADF4377 Set SR_DEL Adjustment attribute */
+int adf4377_set_sr_del_adj(struct adf4377_dev *dev, int32_t val);
+
+/** ADF4377 Get SR_DEL Adjustment attribute */
+int adf4377_get_sr_del_adj(struct adf4377_dev *dev, int32_t *val);
+
+/** ADF4377 Set INV_SR Adjustment attribute */
+int adf4377_set_en_sr_inv_adj(struct adf4377_dev *dev, bool en);
+
+/** ADF4377 Get INV_SR Adjustment  attribute */
+int adf4377_get_en_sr_inv_adj(struct adf4377_dev *dev, bool *en);
+
+/** ADF4377 Set sysref Monitoring attribute */
+int adf4377_set_en_sysref_monitor(struct adf4377_dev *dev, bool en);
+
+/** ADF4377 Get sysref Monitoring attribute */
+int adf4377_get_en_sysref_monitor(struct adf4377_dev *dev, bool *en);
+
+/** ADF4377 Set NDEL (N divider Delay) register value */
+int adf4377_set_ndel(struct adf4377_dev *dev, int32_t val);
+
+/** ADF4377 Get NDEL (N divider Delay) register value */
+int adf4377_get_ndel(struct adf4377_dev *dev, int32_t *val);
+
+/** ADF4377 Set RDEL (R divider Delay) register value */
+int adf4377_set_rdel(struct adf4377_dev *dev, int32_t val);
+
+/** ADF4377 Get RDEL (R divider Delay) register value */
+int adf4377_get_rdel(struct adf4377_dev *dev, int32_t *val);
+
 /* Set Output frequency */
 int adf4377_set_freq(struct adf4377_dev *dev);
+
+/* Soft reseting device and Load default registers */
+int adf4377_soft_reset(struct adf4377_dev *dev, bool spi_4wire);
 
 /** ADF4377 Initialization */
 int32_t adf4377_init(struct adf4377_dev **device,

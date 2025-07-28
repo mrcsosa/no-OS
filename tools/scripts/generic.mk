@@ -144,6 +144,14 @@ ifeq 'mbed' '$(PLATFORM)'
 include $(NO-OS)/tools/scripts/mbed.mk
 endif
 
+ifeq 'win' '$(PLATFORM)'
+include $(NO-OS)/tools/scripts/win.mk
+endif
+
+ifeq 'mac' '$(PLATFORM)'
+include $(NO-OS)/tools/scripts/mac.mk
+endif
+
 #------------------------------------------------------------------------------
 #                            COMMON COMPILER FLAGS                             
 #------------------------------------------------------------------------------
@@ -153,8 +161,7 @@ CFLAGS += -Wall								\
 	 -Wextra							\
 	 -Wno-unused-parameter						\
 	 -MMD 								\
-	 -MP								\
-	 -lm
+	 -MP
 
 #------------------------------------------------------------------------------
 #                          COMMON INITIALIZATION
@@ -301,7 +308,8 @@ $(OBJECTS_DIR)/%.o: $$(call get_full_path, %).S | $$(@D)/.
 	$(AS) -c @$(ASFLAGS_FILE) $< -o $@
 
 ifneq ($(strip $(LSCRIPT)),)
-LSCRIPT_FLAG = -T$(LSCRIPT)
+# Handle multiple linker scripts by prepending -T to each one
+LSCRIPT_FLAG = $(foreach script,$(LSCRIPT),-T$(script))
 endif
 
 define generate_cflags_func
@@ -327,7 +335,7 @@ define overwrite_file_if_different
 endef
 
 define generate_flags_file
-	echo -n > $(1).tmp
+	touch $(1).tmp
 	$(call process_items_in_chunks,$(2),10,$(3))
 	$(call overwrite_file_if_different,$(1).tmp,$(1))
 	rm -f $(1).tmp
@@ -342,7 +350,7 @@ pre_build:
 	$(call generate_flags_file,$(OBJS_FILE),$(OBJS),generate_objs_func)
 
 $(BINARY): $(LIB_TARGETS) $(OBJS) $(ASM_OBJS) $(LSCRIPT) $(BOOTOBJ)
-	$(call print,[LD] $(notdir $(OBJS)))
+	$(call print,[LD] $(notdir $(OBJS) $(notdir $(ASM_OBJS))))
 	$(CC) $(LSCRIPT_FLAG) $(LDFLAGS) $(LIB_PATHS) -o $(BINARY) @$(OBJS_FILE) $(EXTRA_FILES) $(BOOTOBJ)\
 			 $(ASM_OBJS) $(LIB_FLAGS)
 	$(MAKE) --no-print-directory post_build
@@ -363,7 +371,7 @@ project: $(LIB_TARGETS) $(PLATFORM)_project
 
 # Platform specific post build dependencies can be added to this rule.
 post_build: $(PLATFORM)_post_build
-	$(SIZE) --format=Berkley $(BINARY) $(HEX)
+	-$(SIZE) --format=Berkley $(BINARY) $(HEX) 2> /dev/null
 
 # Function to process a list in chunks
 # Arguments:
@@ -386,9 +394,9 @@ $(foreach file,$(BUILD_FILES), \
 	$(eval $(file): $(filter %/$(notdir $(file)),$(SRC_FILES))) \
 )
 
-$(BUILD_FILES): % :
+$(BUILD_FILES): % : | make_dirs
 	$(call update_file,$<,$@)
-	@TS=$(shell stat --format=%Y $<); touch -h -d @$${TS} $@
+	-@TS=$(shell stat --format=%Y $< 2> /dev/null); touch -h -d @$${TS} $@ 2> /dev/null
 
 make_dirs:
 	$(call mk_dir,$(DIRS_TO_CREATE))

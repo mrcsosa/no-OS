@@ -70,16 +70,16 @@ check_sphinx_doc() {
                         if ! [ -f "$sphinx_path/$top_dir/$fn_dir.rst" ];
                         then
                                 echo_red "Missing $fn_dir.rst file at $sphinx_path/$top_dir"
-                                erros_found=1
+                                errors_found=1
                         fi
 
                         if ! grep -q "$top_dir/$fn_dir" "$sphinx_path/${top_dir}_doc.rst"
                         then
                                 echo_red "Missing $top_dir/$fn_dir link inside $sphinx_path/${top_dir}_doc.rst"
-                                erros_found=1
+                                errors_found=1
                         fi
 
-                        if [ $erros_found -eq 1 ]
+                        if [ "$errors_found" -eq "1" ]
                         then
                                 exit 1
                         fi
@@ -92,7 +92,7 @@ check_sphinx_doc() {
 ############################################################################
 build_doxygen() {
         pushd ${TOP_DIR}/doc/doxygen
-        (cd build && ! make -j${NUM_JOBS} doc 2>&1 | grep -E "warning:|error:") || {
+        (cd build && ! make -j${NUM_JOBS} doc TOP_DIR=${TOP_DIR} 2>&1 | grep -E "warning:|error:") || {
                 echo_red "Documentation incomplete or errors in the generation of it have occured!"
                 exit 1
         }
@@ -140,7 +140,7 @@ update_gh_pages() {
 
                 # Create doxygen folder holding new build content
                 mkdir -p ${TOP_DIR}/doxygen
-                cp -R ${TOP_DIR}/doc/doxygen/build/doxygen_doc/html/* ${TOP_DIR}/doxygen/
+                rsync -a "${TOP_DIR}/doc/doxygen/build/doxygen_doc/html/" "${TOP_DIR}/doxygen/"
 
                 # Add sphinx build content to root folder
                 cp -R ${TOP_DIR}/doc/sphinx/build/html/* ${TOP_DIR}
@@ -172,8 +172,8 @@ update_gh_pages() {
 
 check_sphinx_doc
 
-build_sphinx
-
 build_doxygen
+
+build_sphinx
 
 update_gh_pages

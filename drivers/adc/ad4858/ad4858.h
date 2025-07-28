@@ -154,7 +154,8 @@
 #define AD4858_DEF_CHN_OFFSET       0x0
 #define AD4858_DEF_CHN_GAIN         0x8000
 #define AD4858_DEF_CHN_PHASE        0x0
-#define AD4858_DEF_CHN_OR           0x7ffff0
+#define AD4858_DEF_CHN_OR_16_BIT    0x7fff00
+#define AD4858_DEF_CHN_OR_20_BIT    0x7ffff0
 #define AD4858_DEF_CHN_UR           0x800000
 
 /**
@@ -171,6 +172,15 @@ enum ad4858_prod_id {
 	AD4852_PROD_ID_L = 0x66,
 	AD4851_PROD_ID_L = 0x67,
 	AD4858I_PROD_ID_L = 0x6F,
+};
+
+/**
+ * @enum ad4858_prod_res
+ * @brief AD485X Product resolution
+ */
+enum ad4858_prod_res {
+	AD4858_16_BIT_RES,
+	AD4858_20_BIT_RES
 };
 
 /**
@@ -361,6 +371,8 @@ struct ad4858_dev {
 	struct no_os_gpio_desc *gpio_busy;
 	/** AD458X Product ID */
 	enum ad4858_prod_id prod_id;
+	/** AD458X Product Resolution */
+	enum ad4858_prod_res prod_res;
 	/** Address ascension enable status. */
 	bool addr_ascension_enable;
 	/** Operating mode. */

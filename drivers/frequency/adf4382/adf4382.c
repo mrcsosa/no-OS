@@ -1,8 +1,8 @@
 /***************************************************************************//**
  *   @file   adf4382.c
  *   @brief  Implementation of adf4382 Driver.
- *   @authors Ciprian Hegbeli (ciprian.hegbeli@analog.com)
- * 	      Jude Osemene (jude.osemene@analog.com)
+ *   @author Ciprian Hegbeli (ciprian.hegbeli@analog.com)
+ *   @author Jude Osemene (jude.osemene@analog.com)
 ********************************************************************************
  * Copyright 2024(c) Analog Devices, Inc.
  *
@@ -194,13 +194,16 @@ int adf4382_reg_dump(struct adf4382_dev *dev)
 /**
  * @brief Set the desired reference frequency and reset everything over to maximum
  * supported value of 5GHz to the max. value and everything under the minimum
- * supported value of 10MHz to the min. value.
+ * supported value of 10MHz to the min. value. This should also update the
+ * frequency and the VCO calibration values.
  * @param dev 		- The device structure.
  * @param val		- The desired reference frequency in Hz.
  * @return    		- 0 in case of success or negative error code.
  */
 int adf4382_set_ref_clk(struct adf4382_dev *dev, uint64_t val)
 {
+	int ret;
+
 	if (!dev)
 		return -EINVAL;
 
@@ -212,7 +215,10 @@ int adf4382_set_ref_clk(struct adf4382_dev *dev, uint64_t val)
 	if (val < ADF4382_REF_CLK_MIN)
 		dev->ref_freq_hz = ADF4382_REF_CLK_MIN;
 
-	return adf4382_set_freq(dev);
+	ret = adf4382_set_freq(dev);
+	if (ret)
+		return ret;
+	return adf4382_set_vco_cal_timeout(dev);
 }
 
 /**
@@ -234,19 +240,24 @@ int adf4382_get_ref_clk(struct adf4382_dev *dev, uint64_t *val)
 /**
  * @brief Set the reference doubler to enable or disable based on the passed
  * parameter. If the parameter is different then 0 it will set the doubler to
- * enable.
+ * enable. This should also update the frequency and the VCO calibration values.
  * @param dev 		- The device structure.
  * @param en	 	- The enable or disable value of the reference doubler.
  * @return    		- 0 in case of success or negative error code.
  */
 int adf4382_set_en_ref_doubler(struct adf4382_dev *dev, bool en)
 {
+	int ret;
+
 	if (!dev)
 		return -EINVAL;
 
 	dev->ref_doubler_en = en;
 
-	return adf4382_set_freq(dev);
+	ret = adf4382_set_freq(dev);
+	if (ret)
+		return ret;
+	return adf4382_set_vco_cal_timeout(dev);
 }
 
 /**
@@ -280,6 +291,8 @@ int adf4382_get_en_ref_doubler(struct adf4382_dev *dev, bool *en)
  */
 int adf4382_set_ref_div(struct adf4382_dev *dev, int32_t div)
 {
+	int ret;
+
 	if (!dev)
 		return -EINVAL;
 
@@ -288,7 +301,10 @@ int adf4382_set_ref_div(struct adf4382_dev *dev, int32_t div)
 	if (div > ADF4382_REF_DIV_MAX)
 		dev->ref_div = ADF4382_REF_DIV_MAX;
 
-	return adf4382_set_freq(dev);
+	ret = adf4382_set_freq(dev);
+	if (ret)
+		return ret;
+	return adf4382_set_vco_cal_timeout(dev);
 }
 
 /**
@@ -757,243 +773,45 @@ static int adf4382_pll_fract_n_compute(struct adf4382_dev *dev, uint64_t freq,
  */
 int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 {
-	uint64_t min_vco_frequency;
-	uint64_t compute_frequency;
-	uint32_t cntr_readback;
-	uint64_t fclk_max_hz = 11000000000;
-	uint32_t m_vco_band = 511;
-	uint64_t ref_freq_khz;
-	uint8_t t_measure = 9;
-	uint64_t pfd_freq;
-	uint32_t cal_div;
-	uint8_t r_mr_clk = 63;
-	uint32_t n_value;
-	uint8_t mr_clk = 8;
-	uint8_t n_int;
-	uint8_t fsm_busy;
-	uint8_t lut_scale = 8;
+	uint64_t operating_pfd_freq;
+	uint64_t pfd_freq_lut = 0;
+	uint8_t ref_div_lut = 0;
 	uint8_t timeout = 0;
-	uint32_t lut_data = 0;
-	uint8_t val;
+	uint8_t lut_scale;
+	uint16_t lut_int;
+	uint8_t fsm_busy;
+	uint16_t n_int;
 	uint8_t tmp;
+	uint8_t val;
 	int ret;
 
 	if (!dev)
 		return -EINVAL;
+
 	if (!en_fast_cal)
 		return 0;
 
-	n_value = NO_OS_DIV_ROUND_CLOSEST(fclk_max_hz, dev->ref_freq_hz);
+	// Stabilize PFD Frequency for Fast Calibration LUT Generation
+	operating_pfd_freq = adf4382_pfd_compute(dev);
 
-	ref_freq_khz = NO_OS_DIV_U64(dev->ref_freq_hz,
-				     KHZ_PER_MHZ);
-	cal_div = NO_OS_DIV_ROUND_CLOSEST(t_measure * ref_freq_khz,
-					  (r_mr_clk * mr_clk));
+	if (operating_pfd_freq > 125 * MHZ) {
+		ref_div_lut = dev->ref_div;
+		pfd_freq_lut = operating_pfd_freq;
+		// Increase reference divider until PFD frequency is below 125MHz
+		do {
+			dev->ref_div += 1;
+			if (dev->ref_div > ADF4382_REF_DIV_MAX)
+				break;
+			pfd_freq_lut = adf4382_pfd_compute(dev);
+		} while (pfd_freq_lut > 125 * MHZ);
+		ret = adf4382_set_ref_div(dev, dev->ref_div);
+		if (ret)
+			return ret;
+	} else {
+		pfd_freq_lut = operating_pfd_freq;
+	}
 
-	ret = adf4382_spi_update_bits(dev, 0x11, ADF4382_CLKOUT_DIV_MSK,
-				      no_os_field_prep
-				      (ADF4382_CLKOUT_DIV_MSK, 0));
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_EN_AUTOCAL_MSK, 0) |
-	      no_os_field_prep(ADF4382_EN_RDBLR_MSK, 0) |
-	      no_os_field_prep(ADF4382_R_DIV_MSK, r_mr_clk);
-	ret = adf4382_spi_write(dev, 0x20, val);
-	if (ret)
-		return ret;
-
-	val = cal_div & ADF4382_CNTR_DIV_WORD_MSK;
-	ret = adf4382_spi_write(dev, 0x3C, val);
-	if (ret)
-		return ret;
-
-	val = (cal_div >> 8) & ADF4382_CNTR_DIV_WORD_MSB_MSK;
-	ret = adf4382_spi_write(dev, 0x3D, val);
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_O_VCO_CORE_MSK, 1) |
-	      no_os_field_prep(ADF4382_O_VCO_BAND_MSK, 1);
-	ret = adf4382_spi_update_bits(dev, 0x4D, ADF4382_O_VCO_CORE_MSK
-				      | ADF4382_O_VCO_BAND_MSK, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x15, ADF4382_M_VCO_CORE_MSK,
-				      no_os_field_prep(
-					      ADF4382_M_VCO_CORE_MSK, 1));
-	if (ret)
-		return ret;
-
-	val = m_vco_band & ADF4382_M_VCO_BAND_LSB_MSK;
-	ret = adf4382_spi_update_bits(dev, 0x15, ADF4382_M_VCO_BAND_LSB_MSK,
-				      no_os_field_prep
-				      (ADF4382_M_VCO_BAND_LSB_MSK, val));
-	if (ret)
-		return ret;
-
-	val = (m_vco_band >> 1) & ADF4382_M_VCO_BAND_MSB_MSK;
-	ret = adf4382_spi_write(dev, 0x16, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x31, ADF4382_EN_VCAL_MSK,
-				      no_os_field_prep
-				      (ADF4382_EN_VCAL_MSK, 1));
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_EN_CPTEST_MSK, 1) |
-	      no_os_field_prep(ADF4382_CP_UP_MSK, 0) |
-	      no_os_field_prep(ADF4382_CP_DOWN_MSK, 0);
-	ret = adf4382_spi_update_bits(dev, 0x2E, ADF4382_EN_CPTEST_MSK
-				      | ADF4382_CP_UP_MSK
-				      | ADF4382_CP_DOWN_MSK, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x1F, ADF4382_EN_BLEED_MSK,
-				      no_os_field_prep
-				      (ADF4382_EN_BLEED_MSK, 0));
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_DCLK_DIV_SEL_MSK, 1) |
-	      no_os_field_prep(ADF4382_DNCLK_DIV1_MSK, 0) |
-	      no_os_field_prep(ADF4382_DCLK_DIV1_MSK, 3);
-	ret = adf4382_spi_update_bits(dev, 0x24, ADF4382_DCLK_DIV_SEL_MSK
-				      | ADF4382_DNCLK_DIV1_MSK
-				      | ADF4382_DCLK_DIV1_MSK, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x31, ADF4382_DCLK_MODE_MSK,
-				      no_os_field_prep
-				      (ADF4382_DCLK_MODE_MSK, 0));
-	if (ret)
-		return ret;
-
-	val = (n_value >> 8) & ADF4382_N_INT_MSB_MSK;
-	ret = adf4382_spi_update_bits(dev, 0x11, ADF4382_N_INT_MSB_MSK,
-				      val);
-	if (ret)
-		return ret;
-
-	val = n_value & ADF4382_N_INT_LSB_MSK;
-	ret = adf4382_spi_write(dev, 0x10, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x3D, ADF4382_READ_MODE_MSK,
-				      no_os_field_prep
-				      (ADF4382_READ_MODE_MSK, 1));
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x34, ADF4382_RST_CNTR_MSK,
-				      no_os_field_prep
-				      (ADF4382_RST_CNTR_MSK, 1));
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x34, ADF4382_RST_CNTR_MSK,
-				      no_os_field_prep
-				      (ADF4382_RST_CNTR_MSK, 0));
-	if (ret)
-		return ret;
-
-	no_os_mdelay(t_measure + 1);
-
-	ret = adf4382_spi_read(dev, 0x57, &tmp);
-	if (ret)
-		return ret;
-	cntr_readback = tmp;
-	cntr_readback = cntr_readback << 8;
-
-	ret = adf4382_spi_read(dev, 0x56, &tmp);
-	if (ret)
-		return ret;
-	cntr_readback |= tmp;
-	cntr_readback = cntr_readback << 8;
-
-	ret = adf4382_spi_read(dev, 0x55, &tmp);
-	if (ret)
-		return ret;
-	cntr_readback |= tmp;
-
-	ret = adf4382_spi_update_bits(dev, 0x3D, ADF4382_READ_MODE_MSK,
-				      no_os_field_prep
-				      (ADF4382_READ_MODE_MSK, 0));
-	if (ret)
-		return ret;
-
-	compute_frequency = dev->ref_freq_hz * n_value * cntr_readback;
-	min_vco_frequency = NO_OS_DIV_U64(compute_frequency, (r_mr_clk
-					  * 8 * cal_div));
-
-	min_vco_frequency /= 8;
-
-	pfd_freq = adf4382_pfd_compute(dev);
-	n_int = NO_OS_DIV_ROUND_UP(min_vco_frequency, pfd_freq);
-
-	// Reinitialize registers for accurate LUT generation
-	val = no_os_field_prep(ADF4382_EN_AUTOCAL_MSK, 1) |
-	      no_os_field_prep(ADF4382_EN_RDBLR_MSK,
-			       dev->ref_doubler_en) |
-	      no_os_field_prep(ADF4382_R_DIV_MSK, dev->ref_div);
-	ret = adf4382_spi_write(dev, 0x20, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x1F, ADF4382_EN_BLEED_MSK,
-				      no_os_field_prep
-				      (ADF4382_EN_BLEED_MSK, 1));
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x31, ADF4382_EN_VCAL_MSK,
-				      no_os_field_prep
-				      (ADF4382_EN_VCAL_MSK, 0));
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_EN_CPTEST_MSK, 0) |
-	      no_os_field_prep(ADF4382_CP_UP_MSK, 0) |
-	      no_os_field_prep(ADF4382_CP_DOWN_MSK, 0);
-	ret = adf4382_spi_update_bits(dev, 0x2E, ADF4382_EN_CPTEST_MSK
-				      | ADF4382_CP_UP_MSK |
-				      ADF4382_CP_DOWN_MSK, val);
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_DCLK_DIV_SEL_MSK, 0) |
-	      no_os_field_prep(ADF4382_DNCLK_DIV1_MSK, 0) |
-	      no_os_field_prep(ADF4382_DCLK_DIV1_MSK, 1);
-	ret = adf4382_spi_update_bits(dev, 0x24, ADF4382_DCLK_DIV_SEL_MSK
-				      | ADF4382_DNCLK_DIV1_MSK
-				      | ADF4382_DCLK_DIV1_MSK, val);
-	if (ret)
-		return ret;
-
-	ret = adf4382_spi_update_bits(dev, 0x31, ADF4382_DCLK_MODE_MSK,
-				      no_os_field_prep
-				      (ADF4382_DCLK_MODE_MSK, 1));
-	if (ret)
-		return ret;
-
-	val = no_os_field_prep(ADF4382_O_VCO_CORE_MSK, 0) |
-	      no_os_field_prep(ADF4382_O_VCO_BAND_MSK, 0);
-	ret = adf4382_spi_update_bits(dev, 0x4D, ADF4382_O_VCO_CORE_MSK
-				      | ADF4382_O_VCO_BAND_MSK, val);
-	if (ret)
-		return ret;
-
-	val = n_int & ADF4382_N_INT_LSB_MSK;
-	ret = adf4382_spi_write(dev, 0x10, val);
-	if (ret)
-		return ret;
-
+	// Set cal_gen values for fast calibration
 	ret = adf4382_spi_update_bits(dev, 0x44, ADF4382_VPTAT_CALGEN_MSK,
 				      no_os_field_prep
 				      (ADF4382_VPTAT_CALGEN_MSK,
@@ -1008,41 +826,48 @@ int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 	if (ret)
 		return ret;
 
+	// Enable LUT Generation
 	dev->en_lut_gen = en_fast_cal;
 	ret = adf4382_spi_update_bits(dev, 0x36, ADF4382_EN_LUT_GEN_MSK,
-				      no_os_field_prep
-				      (ADF4382_EN_LUT_GEN_MSK,
-				       dev->en_lut_gen));
+				      no_os_field_prep(ADF4382_EN_LUT_GEN_MSK,
+						      dev->en_lut_gen));
 	if (ret)
 		return ret;
 
+	// Compute and set the minimum N_INT values
+	n_int = NO_OS_DIV_ROUND_UP(dev->vco_min, pfd_freq_lut);
 	val = n_int & ADF4382_N_INT_LSB_MSK;
 	ret = adf4382_spi_write(dev, 0x10, val);
 	if (ret)
 		return ret;
 
+	// Monitor FSM busy status
 	ret = adf4382_spi_read(dev, 0x58, &val);
 	if (ret)
 		return ret;
-
 	fsm_busy = no_os_field_get(val, ADF4382_FSM_BUSY_MSK);
 
 	while (fsm_busy == 1) {
+		if (timeout++ > ADF4382_FSM_BUSY_LOOP_CNT)
+			break;
 		no_os_mdelay(10);
 		ret = adf4382_spi_read(dev, 0x58, &val);
 		if (ret)
 			return ret;
 		fsm_busy = no_os_field_get(val, ADF4382_FSM_BUSY_MSK);
-		if (timeout++ > 100)
-			break;
 	}
+	if (timeout > ADF4382_FSM_BUSY_LOOP_CNT)
+		return -ETIMEDOUT;
 
+	// Compute the LUT scale based on PFD frequency
+	lut_scale = NO_OS_DIV_ROUND_CLOSEST(operating_pfd_freq, pfd_freq_lut);
+	lut_scale *= 8;
 	val = lut_scale & ADF4382_LUT_SCALE_MSK;
 	ret = adf4382_spi_write(dev, 0x4F, val);
 	if (ret)
 		return ret;
 
-	dev->en_lut_gen = 0;
+	dev->en_lut_gen = !en_fast_cal;
 	ret = adf4382_spi_update_bits(dev, 0x36, ADF4382_EN_LUT_GEN_MSK,
 				      no_os_field_prep
 				      (ADF4382_EN_LUT_GEN_MSK,
@@ -1050,31 +875,31 @@ int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 	if (ret)
 		return ret;
 
-	// Update LUT for 22GHz step.
-	dev->freq = 22000000000;
+	// Lock to the maximum frequency
+	dev->freq = dev->freq_max;
 	ret = adf4382_set_freq(dev);
 	if (ret)
 		return ret;
 
+
+	// Read LUT int value directly from registers and write it to the LUT
 	ret = adf4382_spi_read(dev, 0x11, &tmp);
 	if (ret)
 		return ret;
-
-	lut_data = no_os_field_get(tmp, ADF4382_N_INT_MSB_MSK);
-	lut_data = lut_data << 8;
+	lut_int = no_os_field_get(tmp, ADF4382_N_INT_MSB_MSK);
+	lut_int = lut_int << 8;
 
 	ret = adf4382_spi_read(dev, 0x10, &tmp);
 	if (ret)
 		return ret;
+	lut_int |= tmp;
 
-	lut_data |= tmp;
-
-	val = (lut_data >> 6) & ADF4382_M_LUT_N_MSB_MSK;
+	val = (lut_int >> 6) & ADF4382_M_LUT_N_MSB_MSK;
 	ret = adf4382_spi_write(dev, 0x203, val);
 	if (ret)
 		return ret;
 
-	val = lut_data & ADF4382_M_LUT_N_LSB_MSK;
+	val = lut_int & ADF4382_M_LUT_N_LSB_MSK;
 	ret = adf4382_spi_update_bits(dev, 0x202, ADF4382_M_LUT_N_LSB_MSK,
 				      no_os_field_prep
 				      (ADF4382_M_LUT_N_LSB_MSK, val));
@@ -1084,8 +909,8 @@ int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 	ret = adf4382_spi_read(dev, 0x5F, &tmp);
 	if (ret)
 		return ret;
-	val = no_os_field_get(tmp, ADF4382_VCO_CORE_MSK);
 
+	val = no_os_field_get(tmp, ADF4382_VCO_CORE_MSK);
 	ret = adf4382_spi_update_bits(dev, 0x202, ADF4382_M_LUT_CORE_MSK,
 				      no_os_field_prep
 				      (ADF4382_M_LUT_CORE_MSK, val));
@@ -1095,8 +920,8 @@ int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 	ret = adf4382_spi_read(dev, 0x5E, &tmp);
 	if (ret)
 		return ret;
-	val = no_os_field_get(tmp, ADF4382_VCO_BAND_LSB_MSK);
 
+	val = no_os_field_get(tmp, ADF4382_VCO_BAND_LSB_MSK);
 	ret = adf4382_spi_write(dev, 0x201, val);
 	if (ret)
 		return ret;
@@ -1104,9 +929,9 @@ int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 	ret = adf4382_spi_read(dev, 0x5F, &tmp);
 	if (ret)
 		return ret;
+
 	val = no_os_field_get(tmp, ADF4382_M_LUT_BAND_MSB_MSK);
-	ret = adf4382_spi_update_bits(dev, 0x202,
-				      ADF4382_M_LUT_BAND_MSB_MSK,
+	ret = adf4382_spi_update_bits(dev, 0x202, ADF4382_M_LUT_BAND_MSB_MSK,
 				      no_os_field_prep
 				      (ADF4382_M_LUT_BAND_MSB_MSK, val));
 	if (ret)
@@ -1117,13 +942,33 @@ int adf4382_set_en_fast_calibration(struct adf4382_dev *dev, bool en_fast_cal)
 	ret = adf4382_spi_write(dev, 0x200, val);
 	if (ret)
 		return ret;
+
+	// Revert the R_DIV value to original value if changed.
+	if (ref_div_lut != 0) {
+		dev->ref_div = ref_div_lut;
+		ret = adf4382_set_ref_div(dev, dev->ref_div);
+		if (ret)
+			return ret;
+	}
 	dev->en_lut_cal = en_fast_cal;
 	adf4382_spi_update_bits(dev, 0x36, ADF4382_EN_LUT_CAL_MSK,
-				no_os_field_prep(ADF4382_EN_LUT_CAL_MSK,
-						dev->en_lut_cal));
+				dev->en_lut_cal);
 	if (ret)
 		return ret;
-	return 0;
+
+	ret = adf4382_spi_update_bits(dev, 0x15, ADF4382_INT_MODE_MSK,
+				      no_os_field_prep(ADF4382_INT_MODE_MSK, 0));
+	if (ret)
+		return ret;
+
+	ret = adf4382_spi_update_bits(dev, 0x2A, ADF4382_PD_CALGEN_MSK,
+				      no_os_field_prep(ADF4382_PD_CALGEN_MSK, 1));
+	if (ret)
+		return ret;
+
+	return adf4382_spi_update_bits(dev, 0x38, ADF4382_CAL_VTUNE_TO_LSB_MSK,
+				       no_os_field_prep(
+					       ADF4382_CAL_VTUNE_TO_LSB_MSK, 0));
 }
 
 /**
@@ -1155,40 +1000,61 @@ int adf4382_get_en_lut_calibration(struct adf4382_dev *dev, bool *en)
 int adf4382_set_en_lut_calibration(struct adf4382_dev *dev, bool en_lut_cal)
 {
 	int ret;
+	uint8_t vptat_calgen, vctat_calgen, pd_calgen;
+	uint32_t cal_vtune_to;
+
 	dev->en_lut_cal = en_lut_cal;
 
 	if (dev->en_lut_cal == 0) {
-		ret = adf4382_spi_update_bits(dev, 0x44, ADF4382_VPTAT_CALGEN_MSK,
-					      no_os_field_prep
-					      (ADF4382_VPTAT_CALGEN_MSK,
-					       ADF4382_VPTAT_CALGEN));
-		if (ret)
-			return ret;
-
-		ret = adf4382_spi_update_bits(dev, 0x45, ADF4382_VCTAT_CALGEN_MSK,
-					      no_os_field_prep
-					      (ADF4382_VCTAT_CALGEN_MSK,
-					       ADF4382_VCTAT_CALGEN));
-		if (ret)
-			return ret;
+		vptat_calgen = ADF4382_VPTAT_CALGEN;
+		vctat_calgen = ADF4382_VCTAT_CALGEN;
+		pd_calgen = 0;
+		cal_vtune_to = dev->cal_vtune_to;
 	} else {
-		ret = adf4382_spi_update_bits(dev, 0x44, ADF4382_VPTAT_CALGEN_MSK,
-					      no_os_field_prep
-					      (ADF4382_VPTAT_CALGEN_MSK,
-					       ADF4382_FASTCAL_VPTAT_CALGEN));
-		if (ret)
-			return ret;
-
-		ret = adf4382_spi_update_bits(dev, 0x45, ADF4382_VCTAT_CALGEN_MSK,
-					      no_os_field_prep
-					      (ADF4382_VCTAT_CALGEN_MSK,
-					       ADF4382_FASTCAL_VCTAT_CALGEN));
-		if (ret)
-			return ret;
+		vptat_calgen = ADF4382_FASTCAL_VPTAT_CALGEN;
+		vctat_calgen = ADF4382_FASTCAL_VCTAT_CALGEN;
+		pd_calgen = 1;
+		cal_vtune_to = 0;
 	}
-	return adf4382_spi_update_bits(dev, 0x36, ADF4382_EN_LUT_CAL_MSK,
-				       no_os_field_prep(ADF4382_EN_LUT_CAL_MSK,
-						       dev->en_lut_cal));
+
+	ret = adf4382_spi_update_bits(dev, 0x44, ADF4382_VPTAT_CALGEN_MSK,
+				      no_os_field_prep(ADF4382_VPTAT_CALGEN_MSK,
+						      vptat_calgen));
+	if (ret)
+		return ret;
+
+	ret = adf4382_spi_update_bits(dev, 0x45, ADF4382_VCTAT_CALGEN_MSK,
+				      no_os_field_prep(ADF4382_VCTAT_CALGEN_MSK,
+						      vctat_calgen));
+	if (ret)
+		return ret;
+
+	ret = adf4382_spi_update_bits(dev, 0x2A, ADF4382_PD_CALGEN_MSK,
+				      no_os_field_prep(ADF4382_PD_CALGEN_MSK,
+						      pd_calgen));
+	if (ret)
+		return ret;
+
+	ret = adf4382_spi_update_bits(dev, 0x38, ADF4382_CAL_VTUNE_TO_LSB_MSK,
+				      no_os_field_prep(ADF4382_CAL_VTUNE_TO_LSB_MSK,
+						      cal_vtune_to));
+	if (ret)
+		return ret;
+
+	ret = adf4382_spi_update_bits(dev, 0x39, ADF4382_CAL_VTUNE_TO_MSB_MSK,
+				      no_os_field_prep(ADF4382_CAL_VTUNE_TO_MSB_MSK,
+						      cal_vtune_to >> 8));
+	if (ret)
+		return ret;
+
+	ret = adf4382_spi_update_bits(dev, 0x36, ADF4382_EN_LUT_CAL_MSK,
+				      no_os_field_prep(ADF4382_EN_LUT_CAL_MSK,
+						      dev->en_lut_cal));
+	if (ret)
+		return ret;
+
+	return adf4382_spi_update_bits(dev, 0x15, ADF4382_INT_MODE_MSK,
+				       no_os_field_prep(ADF4382_INT_MODE_MSK, 0));
 }
 
 /**
@@ -1676,19 +1542,6 @@ int adf4382_set_freq(struct adf4382_dev *dev)
 	if (ret)
 		return ret;
 
-	//Time for VCO calibration based on Vtune
-	val = ADF4382_VCO_CAL_VTUNE & ADF4382_CAL_VTUNE_TO_LSB_MSK;
-	ret = adf4382_spi_write(dev, 0x38, val);
-	if (ret)
-		return ret;
-
-	val = (ADF4382_VCO_CAL_VTUNE >> 8) & ADF4382_CAL_VTUNE_TO_MSB_MSK;
-	ret = adf4382_spi_update_bits(dev, 0x39, ADF4382_CAL_VTUNE_TO_MSB_MSK,
-				      no_os_field_prep
-				      (ADF4382_CAL_VTUNE_TO_MSB_MSK, val));
-	if (ret)
-		return ret;
-
 	//VCO automatic level calibration time
 	ret = adf4382_spi_write(dev, 0x3A, ADF4382_VCO_CAL_ALC);
 	if (ret)
@@ -2020,6 +1873,62 @@ int adf4382_get_sw_sync(struct adf4382_dev *dev, bool *sw_sync)
 }
 
 /**
+ * @brief Computes and sets the VCO Calibration Timeout values.
+ * @param dev 	- The device structure.
+ * @return 	- 0 in case of success or negative error code.
+ */
+int adf4382_set_vco_cal_timeout(struct adf4382_dev *dev)
+{
+	uint32_t cal_count_to, cal_vtune_to, cal_vco_to;
+	uint32_t cal_count_to_time = 235; // Default value in 23.5us steps
+	uint8_t dclk_div1, dclk_div, val;
+	uint64_t pfd_freq;
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	pfd_freq = adf4382_pfd_compute(dev);
+
+	// Read DCLK_DIV1 once
+	ret = adf4382_spi_read(dev, 0x24, &val);
+	if (ret)
+		return ret;
+	dclk_div1 = no_os_field_get(val, ADF4382_DCLK_DIV1_MSK);
+	dclk_div = 1 << dclk_div1;
+
+	// VCO Calibration Count Timeout
+	cal_count_to = NO_OS_DIV_ROUND_CLOSEST_ULL((cal_count_to_time * pfd_freq),
+			(10 * MHZ * dclk_div * 16));
+	ret = adf4382_spi_write(dev, 0x37,
+				(cal_count_to & ADF4382_CAL_COUNT_TO_MSK));
+	if (ret)
+		return ret;
+
+	cal_vtune_to = NO_OS_DIV_ROUND_CLOSEST_ULL
+		       (dev->max_lpf_cap_value_uf * 80000ULL * pfd_freq,
+			420000000000ULL * dclk_div);
+	dev->cal_vtune_to = cal_vtune_to & ADF4382_CAL_VTUNE_TO_LSB_MSK;
+	ret = adf4382_spi_write(dev, 0x38, dev->cal_vtune_to);
+	if (ret)
+		return ret;
+	ret = adf4382_spi_update_bits(dev, 0x39, ADF4382_CAL_VTUNE_TO_MSB_MSK,
+				      no_os_field_prep(ADF4382_CAL_VTUNE_TO_MSB_MSK,
+						      dev->cal_vtune_to >> 8));
+	if (ret)
+		return ret;
+
+	// VCO Calibration VCO Timeout
+	cal_vco_to = NO_OS_DIV_ROUND_CLOSEST_ULL(pfd_freq, MHZ * dclk_div);
+	ret = adf4382_spi_write(dev, 0x3A, cal_vco_to);
+	if (ret)
+		return ret;
+	return adf4382_spi_update_bits(dev, 0x3B, ADF4382_CAL_VCO_TO_MSB_MSK,
+				       no_os_field_prep(ADF4382_CAL_VCO_TO_MSB_MSK,
+						       cal_vco_to >> 8));
+}
+
+/**
  * @brief ADF4382 SPI Scratchpad check.
  * @param dev 	- The device structure.
  * @return 	- 0 in case of success or negative error code.
@@ -2103,6 +2012,7 @@ int adf4382_init(struct adf4382_dev **dev,
 	device->bleed_word = init_param->bleed_word;
 	device->ld_count = init_param->ld_count;
 	device->phase_adj = 0;
+	device->max_lpf_cap_value_uf = init_param->max_lpf_cap_value_uf;
 
 	switch (init_param->id) {
 	case ID_ADF4382:
@@ -2169,6 +2079,10 @@ int adf4382_init(struct adf4382_dev **dev,
 	}
 
 	ret = adf4382_set_freq(device);
+	if (ret)
+		goto error_spi;
+
+	ret = adf4382_set_vco_cal_timeout(device);
 	if (ret)
 		goto error_spi;
 

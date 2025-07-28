@@ -13,9 +13,24 @@ CFLAGS += -DIIO_SUPPORT
 endif
 
 # FreeRTOS
-ifeq '$(FREERTOS)' 'y'
+ifneq ($(if $(findstring freertos, $(LIBRARIES)), 1),)
 CFLAGS += -DFREERTOS
 include $(NO-OS)/tools/scripts/freertos.mk
+endif
+
+ifneq ($(if $(findstring ftd2xx, $(LIBRARIES)), 1),)
+ifeq 'linux' '$(PLATFORM)'
+CFLAGS += -DFTD2XX
+include $(NO-OS)/tools/scripts/ftd2xx.mk
+endif
+ifeq 'win' '$(PLATFORM)'
+CFLAGS += -DFTD2XX
+include $(NO-OS)/tools/scripts/ftd2xx.mk
+endif
+ifeq 'mac' '$(PLATFORM)'
+CFLAGS += -DFTD2XX
+include $(NO-OS)/tools/scripts/ftd2xx.mk
+endif
 endif
 
 #	MBEDTLS
@@ -113,6 +128,16 @@ include $(NO-OS)/tools/scripts/lwip.mk
 INCS += $(NO-OS)/libraries/lwip/arch
 INCS += $(NO-OS)/libraries/lwip/configs/lwipcfg.h
 INCS += $(NO-OS)/libraries/lwip/configs/lwipopts.h
+endif
+
+# Add LVGL library
+ifneq ($(if $(findstring lvgl, $(LIBRARIES)), 1),)
+include $(NO-OS)/tools/scripts/lvgl.mk
+endif
+
+ifneq ($(if $(findstring esh, $(LIBRARIES)), 1),)
+$(error)
+include $(NO-OS)/tools/scripts/esh.mk
 endif
 
 LIB_TARGETS			+= $(IIO_LIB) $(MBEDTLS_LIBS) $(FATFS_LIB) $(MQTT_LIB) $(AZURE_LIBS)

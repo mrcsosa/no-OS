@@ -111,6 +111,14 @@
 #define ADXL367_REG_AXIS_MASK		0x43
 #define ADXL367_REG_STATUS_COPY         0x44
 #define ADXL367_REG_STATUS_2            0x45
+#define ADXL367_REG_STATUS_3		0x46
+#define ADXL367_REG_PEDOMETER_STEP_CNT_H	0x47
+#define ADXL367_REG_PEDOMETER_STEP_CNT_L	0x48
+#define ADXL367_REG_PEDOMETER_CTL	0x49
+#define ADXL367_REG_PEDOMETER_THRESH_H	0x4a
+#define ADXL367_REG_PEDOMETER_THRESH_L	0x4b
+#define ADXL367_REG_PEDOMETER_SENS_H	0x4c
+#define ADXL367_REG_PEDOMETER_SENS_L	0x4d
 
 /* ADXL367_REG_STATUS definitions */
 #define ADXL367_STATUS_ERR_USER_REGS    NO_OS_BIT(7)
@@ -129,6 +137,7 @@
 #define ADXL367_THRESH_L		0xFC
 
 /* ADXL367_REG_ACT_INACT_CTL definitions */
+#define ADXL367_ACT_INACT_CTL_REF_READBACK_MSK	NO_OS_GENMASK(7, 6)
 #define ADXL367_ACT_INACT_CTL_LINKLOOP_MSK	NO_OS_GENMASK(5, 4)
 #define ADXL367_ACT_INACT_CTL_INACT_EN_MSK	NO_OS_GENMASK(3, 2)
 #define ADXL367_ACT_INACT_CTL_ACT_EN_MSK	NO_OS_GENMASK(1, 0)
@@ -232,9 +241,18 @@
 #define ADXL367_ADC_EN				NO_OS_BIT(0)
 
 /* ADXL367_REG_TEMP_CTL definitions. */
+#define ADXL367_NL_COMP_EN			NO_OS_BIT(7)
 #define ADXL367_TEMP_INACT_EN			NO_OS_BIT(3)
 #define ADXL367_TEMP_ACT_EN			NO_OS_BIT(1)
 #define ADXL367_TEMP_EN				NO_OS_BIT(0)
+
+/* ADXL367_REG_STATUS_3 definitions. */
+#define ADXL367_PEDOMETER_OVERFLOW_MSK		NO_OS_BIT(0)
+
+/* ADXL367_REG_PEDOMETER_CTL definitions. */
+#define ADXL367_PEDOMETER_RESET_STEPMSK		NO_OS_BIT(2)
+#define ADXL367_PEDOMETER_RESET_OF_MSK		NO_OS_BIT(1)
+#define ADXL367_PEDOMETER_EN_MSK		NO_OS_BIT(0)
 
 /* ADXL367 device information */
 #define ADXL367_DEVICE_AD               0xAD
@@ -276,6 +294,15 @@
 #define ADXL367_SELF_TEST_MIN	90 * 100 / 25
 /* Max change = 270mg. Sensitivity = 4LSB / mg */
 #define ADXL367_SELF_TEST_MAX	270 * 100 / 25
+
+/**
+ * @enum adxl367_id
+ * @brief Compatible device specifier, value corresponds to REV_ID register value.
+ */
+enum adxl367_id {
+	ADXL367_ID = 0x3,
+	ADXL366_ID = 0x5,
+};
 
 /**
  * @enum adxl367_comm_type
@@ -411,6 +438,8 @@ struct adxl367_fractional_val {
  * @brief ADXL367 Device structure.
  */
 struct adxl367_dev {
+	/** Compatible device specifier. */
+	enum adxl367_id			id;
 	/** Communication type - I2C or SPI. */
 	enum adxl367_comm_type		comm_type;
 	/** SPI Descriptor */
@@ -438,6 +467,8 @@ struct adxl367_dev {
  * @brief Structure holding the parameters for ADXL367 device initialization.
  */
 struct adxl367_init_param {
+	/** Compatible device specifier. */
+	enum adxl367_id			id;
 	/** Communication type - I2C or SPI. */
 	enum adxl367_comm_type 		comm_type;
 	/** SPI Initialization structure. */
@@ -573,5 +604,24 @@ int adxl367_setup_inactivity_detection(struct adxl367_dev *dev,
 				       uint8_t  ref_or_abs,
 				       uint16_t threshold,
 				       uint16_t  time);
+
+/* Enable or disable Z-axis nonlinearity compensation. */
+int adxl367_z_nonlinearity_compensation(struct adxl367_dev *dev, bool enable);
+
+/* Enable or disable activity and inactivity reference readback. */
+int adxl367_reference_readback(struct adxl367_dev *dev,
+			       bool inactivity,
+			       int16_t* x,
+			       int16_t* y,
+			       int16_t* z);
+
+/* Enable the step counter feature. */
+int adxl367_pedometer_enable(struct adxl367_dev *dev, bool enable);
+
+/* Read the step counter. */
+int adxl367_pedometer_get_steps(struct adxl367_dev *dev, uint16_t *steps);
+
+/* Reset the step counter. */
+int adxl367_pedometer_reset(struct adxl367_dev *dev);
 
 #endif /* __ADXL367_H__ */

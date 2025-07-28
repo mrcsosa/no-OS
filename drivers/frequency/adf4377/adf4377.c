@@ -3,6 +3,7 @@
  *   @brief  Implementation of adf4377 Driver.
  *   @author Antoniu Miclaus (antoniu.miclaus@analog.com)
  *   @author Jude Osemene (jude.osemene@analog.com)
+ *   @author Sirac Kucukarabacioglu (sirac.kucukarabacioglu@analog.com)
 ********************************************************************************
  * Copyright 2025(c) Analog Devices, Inc.
  *
@@ -257,8 +258,6 @@ int adf4377_get_ref_clk(struct adf4377_dev *dev, uint64_t *val)
  */
 int adf4377_set_cp_i(struct adf4377_dev *dev, int32_t reg_val)
 {
-	int ret;
-
 	if (!dev)
 		return -EINVAL;
 
@@ -397,7 +396,7 @@ static uint64_t adf4377_pfd_compute(struct adf4377_dev *dev)
  * @param spi_4wire	- The SPI interface mode.
  * @return 		- Returns 0 in case of success or negative error code.
  */
-static int adf4377_soft_reset(struct adf4377_dev *dev, bool spi_4wire)
+int adf4377_soft_reset(struct adf4377_dev *dev, bool spi_4wire)
 {
 	uint8_t i;
 	int ret;
@@ -751,6 +750,232 @@ int adf4377_get_rfout(struct adf4377_dev *dev, uint64_t *val)
 
 	freq = n * pfd;
 	*val = freq;
+
+	return 0;
+}
+
+/**
+ * @brief Set the NDEL (N divider Delay) register value.
+ * @param dev - The device structure.
+ * @param val - The desired NDEL value. The value will be clamped to the
+ *              maximum supported value if it exceeds the limit.
+ * @return Returns 0 in case of success or negative error code otherwise.
+ */
+int adf4377_set_ndel(struct adf4377_dev *dev, int32_t val)
+{
+	uint8_t tmp;
+
+	if (!dev)
+		return -EINVAL;
+
+	tmp = (uint8_t)val;
+	if (val > ADF4377_R_N_DEL_MAX)
+		tmp = ADF4377_R_N_DEL_MAX;
+
+	return adf4377_spi_update_bit(dev, 0x17, ADF4377_N_DEL_MSK, ADF4377_N_DEL(tmp));
+}
+
+/**
+ * @brief Gets the value of the set NDEL (N divider Delay) register.
+ * @param dev - The device structure.
+ * @param val - The read NDEL register value.
+ * @return Returns 0 in case of success or negative error code otherwise.
+ */
+int adf4377_get_ndel(struct adf4377_dev *dev, int32_t *val)
+{
+	uint8_t tmp;
+	int ret;
+
+	ret = adf4377_spi_read(dev, 0x17, &tmp);
+	if (ret)
+		return ret;
+
+	*val = no_os_field_get(ADF4377_N_DEL_MSK, tmp);
+
+	return 0;
+}
+
+/**
+ * @brief Set the RDEL (R divider Delay) register value.
+ * @param dev - The device structure.
+ * @param val - The desired RDEL value. The value will be clamped to the
+ *              maximum supported value if it exceeds the limit.
+ * @return Returns 0 in case of success or negative error code otherwise.
+ */
+int adf4377_set_rdel(struct adf4377_dev *dev, int32_t val)
+{
+	uint8_t tmp;
+
+	if (!dev)
+		return -EINVAL;
+
+	tmp = (uint8_t)val;
+	if (val > ADF4377_R_N_DEL_MAX)
+		tmp = ADF4377_R_N_DEL_MAX;
+
+	return adf4377_spi_update_bit(dev, 0x18, ADF4377_R_DEL_MSK, ADF4377_R_DEL(tmp));
+}
+
+/**
+ * @brief Gets the value of the set RDEL (R divider Delay) register.
+ * @param dev - The device structure.
+ * @param val - The read RDEL register value.
+ * @return Returns 0 in case of success or negative error code otherwise.
+ */
+int adf4377_get_rdel(struct adf4377_dev *dev, int32_t *val)
+{
+	int32_t rdel;
+	uint8_t tmp;
+	int ret;
+
+	ret = adf4377_spi_read(dev, 0x18, &tmp);
+	if (ret)
+		return ret;
+
+	*val =  no_os_field_get(ADF4377_R_DEL_MSK, tmp);
+
+	return 0;
+}
+
+/**
+ * @brief Set the value of SR_DEL Adjustment Feature Translated to Pico Seconds
+ * on the output. Reset to Max  value of 127.
+ * @param dev 		- The device structure.
+ * @param val	 	- The desired SR_DEL register value.
+ * @return    		- Result of the writing procedure, error code otherwise.
+ */
+int adf4377_set_sr_del_adj(struct adf4377_dev *dev, int32_t val)
+{
+	uint8_t tmp;
+
+	if (!dev)
+		return -EINVAL;
+
+	dev->sr_del_adj = (uint8_t)val;
+
+	if (val > ADF4377_SR_DEL_MAX)
+		dev->sr_del_adj = ADF4377_SR_DEL_MAX;
+
+	tmp = ADF4377_SR_DEL(dev->sr_del_adj);
+	return adf4377_spi_update_bit(dev, 0x43, ADF4377_SR_DEL_MSK, tmp);
+}
+
+/**
+ * @brief Gets the value of the set SR_DEL Adjustment Feature Translated to Pico
+ * Seconds on the output.
+ * @param dev 		- The device structure.
+ * @param val	 	- The read SR_DEL register value.
+ * @return    		- 0 in case of success or negative error code.
+ */
+int adf4377_get_sr_del_adj(struct adf4377_dev *dev, int32_t *val)
+{
+	uint8_t tmp;
+	int ret;
+
+	ret = adf4377_spi_read(dev, 0x43, &tmp);
+	if (ret)
+		return ret;
+
+	dev->sr_del_adj = no_os_field_get(ADF4377_SR_DEL_MSK, tmp);
+	*val = dev->sr_del_adj;
+
+	return 0;
+}
+
+/**
+ * @brief Set the value of SR_INV_ADJ Adjustment to enable or disable which adds
+ * a constant value to the skew adjustment output.
+ * @param dev 		- The device structure.
+ * @param en	 	- The enable or disable value of SR_INV.
+ * @return    		- Result of the writing procedure, error code otherwise.
+ */
+int adf4377_set_en_sr_inv_adj(struct adf4377_dev *dev, bool en)
+{
+	uint8_t tmp;
+
+	if (!dev)
+		return -EINVAL;
+
+	dev->sr_inv = en;
+
+	tmp = ADF4377_INV_SR(dev->sr_inv);
+	return adf4377_spi_update_bit(dev, 0x43, ADF4377_INV_SR_MSK, tmp);
+}
+
+/**
+ * @brief Gets the value of the set SR_INV_ADJ Adjustment to enable or disable
+ * which adds a constant value to the skew adjustment output.
+ * @param dev 		- The device structure.
+ * @param en	 	- The read value of SR_INV.
+ * @return    		- 0 in case of success or negative error code.
+ */
+int adf4377_get_en_sr_inv_adj(struct adf4377_dev *dev, bool *en)
+{
+	uint8_t tmp;
+	int ret;
+
+	ret = adf4377_spi_read(dev, 0x43, &tmp);
+	if (ret)
+		return ret;
+
+	dev->sr_inv = no_os_field_get(ADF4377_INV_SR_MSK, tmp);
+	*en = dev->sr_inv;
+
+	return 0;
+}
+
+/**
+ * @brief Set enable/disable sysref monitoring.
+ * @param dev 		- The device structure.
+ * @param en	 	- The enable or disable value of the sysref monitor.
+ * @return    		- 0 in case of success or negative error code.
+ */
+int adf4377_set_en_sysref_monitor(struct adf4377_dev *dev, bool en)
+{
+	int ret;
+
+	if (!dev)
+		return -EINVAL;
+
+	ret = adf4377_spi_update_bit(dev, 0x42, ADF4377_PD_SR_MON_MSK,
+				     ADF4377_PD_SR_MON(!en));
+	if (ret)
+		return ret;
+
+	if (en) {
+		ret = adf4377_spi_update_bit(dev, 0x42, ADF4377_RST_SR_MON_MSK,
+					     ADF4377_RST_SR_MON(en));
+		if (ret)
+			return ret;
+
+		no_os_udelay(ADF4377_SR_MON_DELAY_US);
+
+		ret = adf4377_spi_update_bit(dev, 0x42, ADF4377_RST_SR_MON_MSK,
+					     ADF4377_RST_SR_MON(!en));
+		if (ret)
+			return ret;
+	}
+	dev->sysrefout = en;
+	return 0;
+}
+
+/**
+ * @brief Gets the value of the set sysref monitoring.
+ * @param dev 		- The device structure.
+ * @param en	 	- The read value of the sysref monitor.
+ * @return    		- 0 in case of success or negative error code.
+ */
+int adf4377_get_en_sysref_monitor(struct adf4377_dev *dev, bool *en)
+{
+	uint8_t tmp;
+	int ret;
+
+	ret = adf4377_spi_read(dev, 0x42, &tmp);
+	if (ret)
+		return ret;
+
+	dev->sysrefout = !(no_os_field_get(ADF4377_PD_SR_MON_MSK, tmp));
+	*en = dev->sysrefout;
 
 	return 0;
 }

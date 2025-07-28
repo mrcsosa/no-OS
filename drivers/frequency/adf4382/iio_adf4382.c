@@ -1,8 +1,8 @@
 /***************************************************************************//**
  *   @file   iio_adf4382.c
  *   @brief  Implementation of IIO ADF4382 Driver.
- *   @authors CHegbeli (ciprian.hegbeli@analog.com)
- *            Jude Osemene (jude.osemene@analog.com)
+ *   @author Ciprian Hegbeli (ciprian.hegbeli@analog.com)
+ *   @author Jude Osemene (jude.osemene@analog.com)
 ********************************************************************************
  * Copyright 2024(c) Analog Devices, Inc.
  *
@@ -209,7 +209,6 @@ static int adf4382_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 		val = en;
 		ret = iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 		break;
-
 	case ADF4382_IIO_DEV_ATTR_FASTCAL_EN:
 		ret = adf4382_get_en_lut_calibration(adf4382, &en);
 		if (ret)
@@ -218,7 +217,6 @@ static int adf4382_iio_read_dev_attr(void *dev, char *buf, uint32_t len,
 		val = en;
 		ret = iio_format_value(buf, len, IIO_VAL_INT, 1, &val);
 		break;
-
 	case ADF4382_IIO_DEV_ATTR_FASTCAL_LUT_EN:
 		ret = adf4382_get_en_lut_calibration(adf4382, &en);
 		if (ret)

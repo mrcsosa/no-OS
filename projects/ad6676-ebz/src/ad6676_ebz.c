@@ -406,10 +406,10 @@ int main(void)
 	// PRBS test
 	ad6676_test(ad6676_device, TESTGENMODE_PN9_SEQ);
 	if (axi_adc_pn_mon(ad6676_core, AXI_ADC_PN9, 10) == -1) {
-		pr_err("%s ad6676 - PN23 sequence mismatch!\n", __func__);
+		pr_err("%s ad6676 - PN9 sequence mismatch!\n", __func__);
 	};
 	ad6676_test(ad6676_device, TESTGENMODE_PN23_SEQ);
-	if (axi_adc_pn_mon(ad6676_core, AXI_ADC_PN23, 10) == -1) {
+	if (axi_adc_pn_mon(ad6676_core, AXI_ADC_PN23A, 10) == -1) {
 		pr_err("%s ad6676 - PN23 sequence mismatch!\n", __func__);
 	};
 
@@ -439,6 +439,11 @@ int main(void)
 	/* Flush cache data. */
 	Xil_DCacheInvalidateRange((uintptr_t)ADC_DDR_BASEADDR, 16384 * 2);
 
+	printf("DMA RAMP example: address=%#x samples=%u channels=%u bits=%u\n",
+	       (uintptr_t)ADC_DDR_BASEADDR,
+	       transfer_test.size / ad6676_core_param.num_channels,
+	       ad6676_core_param.num_channels, 16);
+
 	// capture data with DMA
 	ad6676_test(ad6676_device, TESTGENMODE_OFF);
 
@@ -452,7 +457,7 @@ int main(void)
 		// Address of data source
 		.src_addr = 0,
 		// Address of data destination
-		.dest_addr = (uintptr_t)ADC_DDR_BASEADDR
+		.dest_addr = (uintptr_t)(ADC_DDR_BASEADDR + 0x100000)
 	};
 	axi_dmac_transfer_start(ad6676_dmac, &transfer_capture);
 	/* Wait until transfer finishes */
@@ -460,9 +465,17 @@ int main(void)
 	if (status)
 		return status;
 	/* Flush cache data. */
-	Xil_DCacheInvalidateRange((uintptr_t)ADC_DDR_BASEADDR, 16384 * 2);
+	Xil_DCacheInvalidateRange((uintptr_t)(ADC_DDR_BASEADDR + 0x100000), 16384 * 2);
+
+	printf("DMA capture example: address=%#x samples=%u channels=%u bits=%u\n",
+	       (uintptr_t)(ADC_DDR_BASEADDR + 0x100000),
+	       transfer_test.size / ad6676_core_param.num_channels,
+	       ad6676_core_param.num_channels, 16);
 
 #ifdef IIO_SUPPORT
+	// Allow time for UART messages to be displayed
+	no_os_mdelay(200);
+
 	struct xil_uart_init_param platform_uart_init_par = {
 #ifdef XPAR_XUARTLITE_NUM_INSTANCES
 		.type = UART_PL,

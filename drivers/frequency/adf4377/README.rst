@@ -1,6 +1,8 @@
 ADF4377 No-OS Driver
 ====================
 
+.. no-os-doxygen::
+
 Supported Devices  
 -----------------
 
@@ -142,6 +144,38 @@ used.
 
 By default only channel 1 is enabled.
 
+SYSREF Output Configuration
+---------------------------
+There are two distinct ways to configure the SYSREF output:
+
+using the **adf4377_set_sr_del_adj** API, which will set the delay adjustment
+value for the SYSREF signal incrementally. While **adf4377_get_sr_del_adj** will
+return the current register value of the SYSREF delay.
+
+using the **adf4377_set_sr_inv_adj** API, which will apply a constant delay
+adjustment value for the SYSREF signal. While **adf4377_get_sr_inv_adj** will
+return the current register value of the SYSREF delay.
+
+The SYSREF monitoring feature can be enabled/disabled using **adf4377_set_en_sysref_monitor**
+while the current configuration can be read out using **adf4377_get_en_sysref_monitor**.
+This api will power up/down the SYSREF monitoring feature as well as toggle the reset
+signal.
+
+Delay Adjustment Configuration
+-------------------------------
+
+The ADF4377 has two delay adjustment features, one for the N delay and one for
+the R delay. These can be configured using the **adf4377_set_rdel** and
+**adf4377_set_ndel** APIs. The current configurations can be read out using **adf4377_get_rdel** and
+**adf4377_get_ndel** APIs.
+
+Appromitely, the R delay is used add delay to the output frequency phase, while the N delay
+is used to remove delay from output frequency phase. 
+Each RDEL bits represents a delay of ~1 ps and each NDEL bit represents a delay of ~1.2 ps.
+Please refer to the datasheet
+`ADF4377 <https://www.analog.com/en/products/adf4377.html>` for exact delay calculations.
+
+
 ADF4377 Frequency Generation
 ----------------------------
 
@@ -268,7 +302,13 @@ The attributes are:
 * rfout_divider_available - lists the available and predefined output dividers
                             of the ADF4377.
 * reference_doubler_en - enables the input doubler.
+* n_del - is the current value of the N delay.
+* r_del - is the current value of the R delay.
 * reference_frequency - is the current set input frequency.
+* sysref_delay_adjust - is the delay adjustment value for the SYSREF signal.
+* sysref_invert_adjust - is a constant delay adjustment value for the SYSREF signal.
+* sysref_monitoring - enables the SYSREF monitoring feature.
+* default_register : Loads the default register values for eval board configuration
 
 Device Channels
 ---------------

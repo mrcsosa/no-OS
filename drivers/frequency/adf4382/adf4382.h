@@ -1,8 +1,8 @@
 /***************************************************************************//**
  *   @file   adf4382.h
  *   @brief  Implementation of adf4382 Driver.
- *   @authors Ciprian Hegbeli (ciprian.hegbeli@analog.com)
- *            Jude Osemene (jude.osemene@analog.com)
+ *   @author Ciprian Hegbeli (ciprian.hegbeli@analog.com)
+ *   @author Jude Osemene (jude.osemene@analog.com)
 ********************************************************************************
  * Copyright 2024(c) Analog Devices, Inc.
  *
@@ -31,6 +31,8 @@
  * NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
  * EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 *******************************************************************************/
+#ifndef _ADF4382_H_
+#define _ADF4382_H_
 
 #include <stdint.h>
 #include <string.h>
@@ -492,17 +494,19 @@
 
 #define ADF4382_VPTAT_CALGEN			46
 #define ADF4382_VCTAT_CALGEN			82
-#define ADF4382_FASTCAL_VPTAT_CALGEN		30
-#define ADF4382_FASTCAL_VCTAT_CALGEN		70
+#define ADF4382_FASTCAL_VPTAT_CALGEN		7
+#define ADF4382_FASTCAL_VCTAT_CALGEN		21
 #define ADF4382_PHASE_BLEED_CNST		2044000
 #define ADF4382_VCO_CAL_CNT			183
 #define ADF4382_VCO_CAL_VTUNE			640
 #define ADF4382_VCO_CAL_ALC			123
 #define ADF4382_POR_DELAY_US			200
-#define ADF4382_LKD_DELAY_US			500
+#define ADF4382_LKD_DELAY_US			1000
 #define ADF4382_COARSE_BLEED_CONST		180U	// 180 microseconds
 #define ADF4382_FINE_BLEED_CONST_1		512U	// 512 microseconds
 #define ADF4382_FINE_BLEED_CONST_2		250U	// 250 microseconds
+#define ADF4382_CAL_VTUNE_TO			124U
+#define ADF4382_FSM_BUSY_LOOP_CNT		100U
 
 #define MHZ					MEGA
 #define S_TO_NS					NANO
@@ -536,6 +540,7 @@ struct adf4382_init_param {
 	uint8_t				ld_count;
 	uint8_t				en_lut_gen;
 	uint8_t				en_lut_cal;
+	uint8_t				max_lpf_cap_value_uf;
 	enum adf4382_dev_id		id;
 };
 
@@ -563,6 +568,8 @@ struct adf4382_dev {
 	uint64_t			freq_max;
 	uint64_t			freq_min;
 	uint8_t				clkout_div_reg_val_max;
+	uint8_t				max_lpf_cap_value_uf;
+	uint32_t			cal_vtune_to;
 	// N_INT variable to trigger auto calibration
 	uint16_t			n_int;
 };
@@ -629,12 +636,13 @@ static const struct reg_sequence adf4382_reg_defaults[] = {
 	{ 0x040, 0x00 },
 	{ 0x03f, 0x82 },
 	{ 0x03e, 0x4E },
+	{ 0x03d, 0x00 },
 	{ 0x03c, 0x00 },
 	{ 0x03b, 0x00 },
 	{ 0x03a, 0xFA },
-	{ 0x039, 0x80 },
-	{ 0x038, 0x71 },
-	{ 0x037, 0x82 },
+	{ 0x039, 0x00 },
+	{ 0x038, 0x7C },
+	{ 0x037, 0xCA },
 	{ 0x036, 0xC0 },
 	{ 0x035, 0x00 },
 	{ 0x034, 0x36 },
@@ -788,9 +796,14 @@ int adf4382_set_sw_sync(struct adf4382_dev *dev, bool sw_sync);
 /** ADF4382 Get sw_sync attribute */
 int adf4382_get_sw_sync(struct adf4382_dev *dev, bool *sw_sync);
 
+/** ADF4382 Set VCO calibration settings attributes */
+int adf4382_set_vco_cal_timeout(struct adf4382_dev *dev);
+
 /** ADF4382 Initialization */
 int adf4382_init(struct adf4382_dev **device,
 		 struct adf4382_init_param *init_param);
 
 /** ADF4382 Remove */
 int adf4382_remove(struct adf4382_dev *dev);
+
+#endif

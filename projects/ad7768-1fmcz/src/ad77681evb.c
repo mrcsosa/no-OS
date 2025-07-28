@@ -61,7 +61,7 @@ struct ad77681_init_param ADC_default_init_param = {
 	{
 		.chip_select = AD77681_SPI_CS,
 		.max_speed_hz = 1000000,
-		.mode = NO_OS_SPI_MODE_3,
+		.mode = NO_OS_SPI_MODE_2,
 		.platform_ops = &spi_eng_platform_ops,
 		.extra = (void*)&spi_eng_init_param,
 	},
@@ -71,7 +71,7 @@ struct ad77681_init_param ADC_default_init_param = {
 	AD77681_CONV_CONTINUOUS,	// conv_mode
 	AD77681_POSITIVE_FS,		// diag_mux_sel
 	false,						// conv_diag_sel
-	AD77681_CONV_16BIT,			// conv_len
+	AD77681_CONV_24BIT,			// conv_len
 	AD77681_CRC, 				// crc_sel
 	0, 							// status_bit
 	AD77681_VCM_HALF_VCC,		/* VCM setup*/
@@ -103,7 +103,7 @@ int main()
 	uint8_t 		*data;
 	uint32_t 		i;
 	int32_t ret;
-	uint8_t commands_data[4] = {0, 0, 0, AD77681_REG_READ(AD77681_REG_ADC_DATA)};
+	uint32_t commands_data[4] = {0, 0, 0, AD77681_REG_READ(AD77681_REG_ADC_DATA)};
 	struct spi_engine_offload_init_param spi_engine_offload_init_param = {
 		.offload_config = (OFFLOAD_RX_EN | OFFLOAD_TX_EN),
 		.rx_dma_baseaddr = AD77681_DMA_1_BASEADDR,
@@ -130,7 +130,7 @@ int main()
 	if (SPI_ENGINE_OFFLOAD_EXAMPLE == 0) {
 		while (1) {
 			ad77681_spi_read_adc_data(adc_dev, adc_data,
-						  AD77681_CONTINUOUS_DATA_READ);
+						  AD77681_REGISTER_DATA_READ);
 			printf("[ADC DATA]: 0x");
 			for (i = 0; i < sizeof(adc_data); i++) {
 				printf("%x", adc_data[i]);

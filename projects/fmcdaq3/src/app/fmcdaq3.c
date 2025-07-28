@@ -71,6 +71,9 @@
 #endif
 #endif
 
+uint32_t dac_buffer[BUFFER_SAMPLES] __attribute__((aligned(1024)));
+uint16_t adc_buffer[BUFFER_SAMPLES] __attribute__((aligned(1024)));
+
 /* DAQ3 reconfiguration */
 void fmcdaq3_reconfig(struct ad9152_init_param *ad9152_param,
 		      struct adxcvr_init *ad9152_xcvr_param,
@@ -360,34 +363,42 @@ int main(void)
 	// dac-device-clock (1.233G)
 	ad9528_channels[0].channel_num = 2;
 	ad9528_channels[0].channel_divider = 1;
+	ad9528_channels[0].output_dis = 0;
 
 	//adc sysref (4.9M)
 	ad9528_channels[1].channel_num = 8;
 	ad9528_channels[1].channel_divider = 256;
+	ad9528_channels[1].output_dis = 0;
 
 	// adc-fpga-clock (616.5M)
 	ad9528_channels[2].channel_num = 9;
 	ad9528_channels[2].channel_divider = 2;
+	ad9528_channels[2].output_dis = 0;
 
 	// adc dev sysref (4.9M)
 	ad9528_channels[3].channel_num = 7;
 	ad9528_channels[3].channel_divider = 256;
+	ad9528_channels[3].output_dis = 0;
 
 	// adc-device-clock (1.233G)
 	ad9528_channels[4].channel_num = 13;
 	ad9528_channels[4].channel_divider = 1;
+	ad9528_channels[4].output_dis = 0;
 
 	// dac sysref (4.9M)
 	ad9528_channels[5].channel_num = 5;
 	ad9528_channels[5].channel_divider = 256;
+	ad9528_channels[5].output_dis = 0;
 
 	// dac-fpga-fmc (616.5M)
 	ad9528_channels[6].channel_num = 4;
 	ad9528_channels[6].channel_divider = 2;
+	ad9528_channels[6].output_dis = 0;
 
 	// dac dev sysref (4.9M)
 	ad9528_channels[7].channel_num = 6;
 	ad9528_channels[7].channel_divider = 256;
+	ad9528_channels[7].output_dis = 0;
 
 	// pllx settings
 	ad9528_param.pdata->spi3wire = 1;
@@ -608,7 +619,7 @@ int main(void)
 
 	struct axi_dma_transfer transfer_rx = {
 		// Number of bytes to write/read
-		.size = 16384 * 2,
+		.size = BUFFER_SAMPLES, //16384 samples * 2 channels
 		// Transfer done flag
 		.transfer_done = 0,
 		// Signal transfer mode
@@ -616,18 +627,21 @@ int main(void)
 		// Address of data source
 		.src_addr = 0,
 		// Address of data destination
-		.dest_addr = (uintptr_t)ADC_DDR_BASEADDR
+		.dest_addr = (uintptr_t)adc_buffer
 	};
 	axi_dmac_transfer_start(ad9680_dmac, &transfer_rx);
 	status = axi_dmac_transfer_wait_completion(ad9680_dmac, 500);
 	if (status)
 		return status;
 #ifdef XILINX_PLATFORM
-	Xil_DCacheInvalidateRange((uintptr_t)ADC_DDR_BASEADDR,
-				  16384 * 2);
+	Xil_DCacheInvalidateRange((uintptr_t)adc_buffer, BUFFER_SAMPLES);
 #endif
-
+	printf("DMA_EXAMPLE: address=%#lx samples=%u channels=%d bits=%d\n",
+	       (uintptr_t)adc_buffer, transfer_rx.size / 2,
+	       ad9680_core->num_channels, ad9152_jesd_param.bits_per_sample);
 #ifdef IIO_SUPPORT
+	no_os_mdelay(100); // Allow time for displaying DMA transfer message
+
 	struct xil_uart_init_param platform_uart_init_par = {
 #ifdef XPAR_XUARTLITE_NUM_INSTANCES
 		.type = UART_PL,
@@ -693,13 +707,13 @@ int main(void)
 	iio_axi_dac_get_dev_descriptor(iio_axi_dac_desc, &dac_dev_desc);
 
 	struct iio_data_buffer read_buff = {
-		.buff = (void *)ADC_DDR_BASEADDR,
-		.size = 0xFFFFFFFF,
+		.buff = adc_buffer,
+		.size = sizeof(adc_buffer),
 	};
 
 	static struct iio_data_buffer write_buff = {
-		.buff = (void *)DAC_DDR_BASEADDR,
-		.size = 0xFFFFFFFF,
+		.buff = dac_buffer,
+		.size = sizeof(dac_buffer),
 	};
 
 	struct iio_app_device devices[] = {

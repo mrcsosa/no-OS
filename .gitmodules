@@ -13,3 +13,12 @@
 [submodule "libraries/lwip/lwip"]
 	path = libraries/lwip/lwip
 	url = https://github.com/lwip-tcpip/lwip
+[submodule "libraries/free_rtos/free_rtos"]
+	path = libraries/free_rtos/free_rtos
+	url = https://github.com/FreeRTOS/FreeRTOS-Kernel.git
+[submodule "libraries/lvgl/lvgl"]
+	path = libraries/lvgl/lvgl
+	url = https://github.com/lvgl/lvgl.git
+[submodule "libraries/esh/esh"]
+	path = libraries/esh/esh
+	url = https://github.com/google/esh.git

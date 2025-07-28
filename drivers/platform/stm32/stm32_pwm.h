@@ -34,9 +34,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
-#include "no_os_gpio.h"
 #include "no_os_irq.h"
-#include "stm32_gpio.h"
 #include "stm32_hal.h"
 
 enum stm32_pwm_timer {
@@ -56,6 +54,12 @@ enum stm32_pwm_trigger {
 	PWM_TS_ITR1,
 	PWM_TS_ITR2,
 	PWM_TS_ITR3,
+	PWM_TS_ETR,
+};
+
+enum stm32_pwm_trigger_polarity {
+	PWM_TRIG_POL_RISING,
+	PWM_TRIG_POL_FALLING,
 };
 
 enum stm32_pwm_trigger_out {
@@ -73,6 +77,7 @@ enum stm32_pwm_slave_mode {
 	STM32_PWM_SM_DISABLE,
 	STM32_PWM_SM_TRIGGER,
 	STM32_PWM_SM_EXTERNAL1,
+	STM32_PWM_SM_GATED,
 };
 
 /**
@@ -104,6 +109,8 @@ struct stm32_pwm_init_param {
 	enum stm32_pwm_trigger trigger_source;
 	/** Trigger out selection */
 	enum stm32_pwm_trigger_out trigger_output;
+	/** Trigger polarity selection */
+	enum stm32_pwm_trigger_polarity trigger_polarity;
 	/* Enable one pulse */
 	bool onepulse_enable;
 	/* Number of pulse repetitions */
@@ -123,8 +130,6 @@ struct stm32_pwm_desc {
 	void *htimer;
 	/** Type of timer used for PWM */
 	enum stm32_pwm_timer pwm_timer;
-	/** Timer GPIO instance */
-	struct no_os_gpio_desc *gpio;
 	/** Timer prescaler */
 	uint32_t prescaler;
 	/** Timer autoreload enable */

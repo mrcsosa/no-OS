@@ -1,8 +1,8 @@
 /***************************************************************************//**
  *   @file   iio_adf4382.h
  *   @brief  Implementation of IIO ADF4382 Driver.
- *   @authors Ciprian Hegbeli (ciprian.hegbeli@analog.com)
- *            Jude Osemene (jude.osemene@analog.com)
+ *   @author Ciprian Hegbeli (ciprian.hegbeli@analog.com)
+ *   @author Jude Osemene (jude.osemene@analog.com)
 ********************************************************************************
  * Copyright 2024(c) Analog Devices, Inc.
  *
@@ -61,8 +61,8 @@ enum adf4382_iio_dev_attr_id {
 	ADF4382_IIO_DEV_ATTR_REF_DOUBLER_EN,
 	ADF4382_IIO_DEV_ATTR_SW_SYNC,
 	ADF4382_IIO_DEV_ATTR_EZ_SYNC,
-	ADF4382_IIO_DEV_ATTR_TIMED_SYNC,
 	ADF4382_IIO_DEV_ATTR_FASTCAL_EN,
+	ADF4382_IIO_DEV_ATTR_TIMED_SYNC,
 	ADF4382_IIO_DEV_ATTR_FASTCAL_LUT_EN,
 	ADF4382_IIO_DEV_ATTR_FASTCAL_CHANGE_FREQ,
 	ADF4382_IIO_DEV_ATTR_FASTCAL_START_CALIBRATION,

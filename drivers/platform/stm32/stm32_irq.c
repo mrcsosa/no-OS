@@ -425,6 +425,14 @@ int stm32_irq_register_callback(struct no_os_irq_ctrl_desc *desc,
 
 			break;
 
+		case HAL_DMA_XFER_HALFCPLT_CB_ID:
+			pDmaCallback.XferHalfCpltCallback = _DMA_HalfCpltCallback;
+			ret = HAL_DMA_RegisterCallback(cb->handle, hal_event,
+						       pDmaCallback.XferHalfCpltCallback);
+			if (ret != HAL_OK)
+				return -EFAULT;
+			break;
+
 		default:
 			return -EINVAL;
 		};
@@ -626,6 +634,34 @@ static int stm32_irq_get_priority(struct no_os_irq_ctrl_desc *desc,
 }
 
 /**
+ * @brief Clear the pending interrupt for an interrupt
+ * @param desc - Interrupt controller descriptor.
+ * @param irq_id - The interrupt vector entry id of the peripheral.
+ * @return 0
+ */
+static int stm32_irq_clear_pending(struct no_os_irq_ctrl_desc* desc,
+				   uint32_t irq_id)
+{
+	HAL_NVIC_ClearPendingIRQ(irq_id);
+
+	return 0;
+}
+
+/**
+ * @brief Set pending interrupt for an interrupt
+ * @param desc - Interrupt controller descriptor.
+ * @param irq_id - The interrupt vector entry id of the peripheral.
+ * @return 0
+ */
+static int stm32_irq_set_pending(struct no_os_irq_ctrl_desc* desc,
+				 uint32_t irq_id)
+{
+	HAL_NVIC_SetPendingIRQ(irq_id);
+
+	return 0;
+}
+
+/**
  * @brief stm32 specific IRQ platform ops structure
  */
 const struct no_os_irq_platform_ops stm32_irq_ops = {
@@ -639,5 +675,7 @@ const struct no_os_irq_platform_ops stm32_irq_ops = {
 	.disable = &stm32_irq_disable,
 	.set_priority = &stm32_irq_set_priority,
 	.get_priority = &stm32_irq_get_priority,
-	.remove = &stm32_irq_ctrl_remove
+	.remove = &stm32_irq_ctrl_remove,
+	.clear_pending = &stm32_irq_clear_pending,
+	.set_pending = &stm32_irq_set_pending
 };
