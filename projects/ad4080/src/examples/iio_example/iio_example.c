@@ -34,8 +34,6 @@
 #include <stdio.h>
 #include <iio_example.h>
 #include <no_os_print_log.h>
-
-//#include <iio_app.h>
 #include <iio_ad4080.h>
 
 static struct ad4080_init_param default_ad4080_init_param = {
@@ -137,7 +135,7 @@ int iio_example_main(void)
 	struct iio_app_init_param iio_app_init_param = {0};
 	struct ad4080_dev *ad4080 = NULL;
 	struct iio_device single_ad4080_iio_device = {0};
-	struct iio_data_buffer read_data_buffer; 
+	struct iio_data_buffer read_data_buffer;
 
 	pr_info("ADALM-MMSC AD4080 example starting... \r\n");
 
@@ -148,8 +146,8 @@ int iio_example_main(void)
 	if (err)
 		goto err_exit;
 
-	/* now, pull down low all the clock generator control signals. 
-	 * we don't use them since the target board has a rotary switch 
+	/* now, pull down low all the clock generator control signals.
+	 * we don't use them since the target board has a rotary switch
 	 * to let the user control the conversion clock anyway. */
 	err = clock_gen_init();
 	if (err)
@@ -162,12 +160,12 @@ int iio_example_main(void)
 	ad4080_iio_device(iio_ad4080, &single_ad4080_iio_device);
 
 	struct iio_app_device single_ad4080_iio_app_device =
-		IIO_APP_DEVICE("ADALM-MMSC", 
-				ad4080,
-				&single_ad4080_iio_device,
-				&read_data_buffer,
-				NULL,
-				NULL);
+		IIO_APP_DEVICE("ADALM-MMSC",
+			       ad4080,
+			       &single_ad4080_iio_device,
+			       &read_data_buffer,
+			       NULL,
+			       NULL);
 
 	iio_app_init_param.devices = &single_ad4080_iio_app_device;
 	iio_app_init_param.nb_devices = 1;
@@ -178,12 +176,11 @@ int iio_example_main(void)
 
 	err = iio_app_run(iio_app);
 
-err_iio_app_init:
+	err_iio_app_init:
 	clock_gen_fini();
-err_clock_gen:
+	err_clock_gen:
 	iio_ad4080_fini(iio_ad4080);
 
-err_exit:
+	err_exit:
 	return err;
 }
-

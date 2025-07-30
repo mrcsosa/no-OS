@@ -97,4 +97,3 @@ struct no_os_uart_init_param uart_init_param = {
 	.platform_ops = IIO_UART_OPS,
 	.extra = IIO_UART_EXTRA,
 };
-

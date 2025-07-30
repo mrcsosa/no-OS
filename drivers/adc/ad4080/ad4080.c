@@ -981,7 +981,7 @@ int ad4080_set_gpio_output_enable(struct ad4080_dev *dev,
  * @param gpio_func - The function to be selected for the GPIO.
  * @return 0 in case of success, negative error code otherwise
  */
-int ad4080_set_gpio_output_func(struct ad4080_dev *dev, 
+int ad4080_set_gpio_output_func(struct ad4080_dev *dev,
 				enum ad4080_gpio gpio,
 				enum ad4080_gpio_op_func_sel gpio_func)
 {
@@ -1150,14 +1150,14 @@ static void ad4080_fini_spi(struct ad4080_spi_desc *desc)
 }
 
 static int ad4080_init_spi(struct ad4080_spi_desc *desc,
-		struct ad4080_spi_init_param *init_param)
+			   struct ad4080_spi_init_param *init_param)
 {
 	int err;
 	err = no_os_spi_init(&desc->spi, init_param->spi);
 	if (err)
 		return err;
 
-	/* we "optionally" initialize the software chip select when user 
+	/* we "optionally" initialize the software chip select when user
 	 * passes a gpio init parameter */
 	desc->ss = NULL;
 	if (init_param->ss) {
@@ -1234,7 +1234,7 @@ int ad4080_init(struct ad4080_dev **device,
 		goto error_data_spi;
 
 	/* During power on or a software reset, GPI0 is the default config SDO.
-	 * AD4080 driver will defer GP initialization and will not make 
+	 * AD4080 driver will defer GP initialization and will not make
 	 * assumptions on what the other GPs are for what function. */
 
 	/* Data Interface Initialization */

@@ -70,13 +70,12 @@ int main(void)
 	if (err)
 		goto err_irq_ctrl_init;
 
-	/* nacuna??? update this to get user configured AD4080 FIFO Full Port */
 	err = no_os_irq_enable(nvic_desc, GPIO0_IRQn);
 	if (err)
 		goto err_irq_enable;
-	
+
 	err = iio_example_main();
-	
+
 	no_os_irq_disable(nvic_desc, GPIO0_IRQn);
 err_irq_enable:
 	no_os_irq_ctrl_remove(nvic_desc);
@@ -85,4 +84,3 @@ err_irq_ctrl_init:
 err_serial_log:
 	return err;
 }
-

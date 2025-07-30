@@ -33,4 +33,3 @@ SRCS += $(DRIVERS)/api/no_os_spi.c \
 	$(NO-OS)/util/no_os_alloc.c
 
 CFLAGS+=-DFIFO_DEPTH=$(FIFO_DEPTH)
-
