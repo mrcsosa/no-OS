@@ -38,6 +38,8 @@ ANALOG TO DIGITAL CONVERTERS
 
    drivers/adaq7980
 
+   drivers/max9611pmb
+
 ADC / DAC
 ==========
 .. toctree::
@@ -80,6 +82,8 @@ DIGITAL TO ANALOG CONVERTERS
 
    drivers/ad3552r
 
+   drivers/ad9152
+
 FREQUENCY GENERATORS
 ====================
 .. toctree::
@@ -99,12 +103,21 @@ FREQUENCY GENERATORS
 
    drivers/adf4350
 
+   drivers/ad9523
+
 INERTIAL MEASUREMENT UNITS
 ==========================
 .. toctree::
    :maxdepth: 1
 
    drivers/imu
+
+IO-LINK
+=======
+.. toctree::
+   :maxdepth: 1
+
+   drivers/max22516
 
 LED
 ===
