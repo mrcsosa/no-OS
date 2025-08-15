@@ -20,4 +20,3 @@ struct max_usb_uart_init_param iio_uart_extra = {
 struct max_gpio_init_param max_gpio_extra = {
 	.vssel = MXC_GPIO_VSSEL_VDDIOH,
 };
-

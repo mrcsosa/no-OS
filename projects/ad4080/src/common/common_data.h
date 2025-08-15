@@ -22,4 +22,3 @@ extern struct no_os_uart_init_param uart_init_param;
 extern struct no_os_uart_init_param serial_log_init_param;
 
 #endif /* __COMMON_DATA_H__ */
-

@@ -22,4 +22,3 @@ INCS += $(PLATFORM_DRIVERS)/maxim_spi.h \
 	$(PLATFORM_DRIVERS)/maxim_usb_uart.h \
 	$(PLATFORM_DRIVERS)/maxim_usb_uart_descriptors.h \
 	$(PLATFORM_DRIVERS)/maxim_gpio.h
-
