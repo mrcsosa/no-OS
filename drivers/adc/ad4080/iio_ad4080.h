@@ -128,8 +128,8 @@ int ad4080_device(struct iio_ad4080_desc *iio_ad4080,
 int ad4080_iio_device(struct iio_ad4080_desc *iio_ad4080,
 		      struct iio_device *iio_device);
 /**
- * @brief Checks if the given pointer is a valid AD4080 IIO FIFO descriptor. 
- */		      
+ * @brief Checks if the given pointer is a valid AD4080 IIO FIFO descriptor.
+ */
 int iio_ad4080_fifo_init(struct iio_ad4080_fifo_struct *fifo,
 			 struct ad4080_dev *ad4080);
 void iio_ad4080_fifo_fini(struct iio_ad4080_fifo_struct *fifo);
@@ -137,23 +137,23 @@ void iio_ad4080_fifo_fini(struct iio_ad4080_fifo_struct *fifo);
 /**
  * @brief Registers an IRQ for the AD4080 FIFO full event.
  */
-int iio_ad4080_fifo_register_irq(struct iio_ad4080_fifo_struct *fifo, 
-		struct no_os_gpio_init_param *gpio_init_param,
-		struct no_os_irq_platform_ops *gpio_irq_platform_ops,
-		const size_t i_gp,
-		iio_ad4080_fifo_isr isr,
-		void *isr_data);
+int iio_ad4080_fifo_register_irq(struct iio_ad4080_fifo_struct *fifo,
+				 struct no_os_gpio_init_param *gpio_init_param,
+				 struct no_os_irq_platform_ops *gpio_irq_platform_ops,
+				 const size_t i_gp,
+				 iio_ad4080_fifo_isr isr,
+				 void *isr_data);
 /**
  * @brief Unregisters an IRQ for the AD4080 FIFO full event.
  */
 void iio_ad4080_fifo_unregister_irq(struct iio_ad4080_fifo_struct *fifo,
-		const size_t i_gp);
+				    const size_t i_gp);
 
 /**
  * @brief Sets the FIFO watermark level.
  */
 int iio_ad4080_fifo_set_watermark(struct iio_ad4080_fifo_struct *fifo,
-		const size_t watermark);
+				  const size_t watermark);
 
 /**
  * @brief Unsets the FIFO watermark level.
@@ -164,7 +164,6 @@ void iio_ad4080_fifo_unset_watermark(struct iio_ad4080_fifo_struct *fifo);
  * @brief Reads the FIFO data from the AD4080 device.
  */
 int iio_ad4080_read_fifo(struct iio_ad4080_fifo_struct *fifo,
-		uint8_t *buf, const size_t buflen);
+			 uint8_t *buf, const size_t buflen);
 
 #endif /* _IIO_AD4080_H__ */
-
