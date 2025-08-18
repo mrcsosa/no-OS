@@ -1457,7 +1457,7 @@ int iio_ad4080_init(struct iio_ad4080_desc **iio_ad4080,
 			     iio_ad4080_init_param->afe_ctrl_init_param);
 	if (err)
 		goto err_afe_ctrl;
-	no_os_gpio_direction_output(ad4080_iio->afe_ctrl, NO_OS_GPIO_LOW);
+	no_os_gpio_direction_output(ad4080_iio->afe_ctrl, NO_OS_GPIO_HIGH);
 
 	*iio_ad4080 = ad4080_iio;
 
