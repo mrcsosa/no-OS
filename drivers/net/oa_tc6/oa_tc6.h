@@ -49,11 +49,23 @@
 #define CONFIG_OA_CHUNK_BUFFER_SIZE	1514
 #endif
 
+#ifndef CONFIG_OA_THREAD_RX_LIMIT
+#define CONFIG_OA_THREAD_RX_LIMIT	5
+#endif
+
+#ifndef CONFIG_OA_ZERO_SWO_ONLY
+#define CONFIG_OA_ZERO_SWO_ONLY		1
+#endif
+
 #define OA_TX_FRAME_BUFF_NUM		CONFIG_OA_TX_FRAME_BUFF_NUM
 #define OA_RX_FRAME_BUFF_NUM		CONFIG_OA_RX_FRAME_BUFF_NUM
 
 /* Space for one full frame + 24 chunk headers (68 * 24)*/
 #define OA_SPI_BUFF_LEN		1632
+
+/* Space for 2 Header + Reg Data + Inverse Reg Data (PROTE) */
+#define OA_SPI_CTRL_LEN		16
+
 #define OA_CHUNK_SIZE		64
 #define OA_REG_LEN		4
 #define OA_HEADER_LEN		4
@@ -78,8 +90,11 @@
 #define OA_DATA_FOOTER_DV_MASK		NO_OS_BIT(21)
 #define OA_DATA_FOOTER_SV_MASK		NO_OS_BIT(20)
 #define OA_DATA_FOOTER_SWO_MASK		NO_OS_GENMASK(19, 16)
+#define OA_DATA_FOOTER_FD_MASK		NO_OS_BIT(15)
 #define OA_DATA_FOOTER_EV_MASK		NO_OS_BIT(14)
 #define OA_DATA_FOOTER_EBO_MASK		NO_OS_GENMASK(13, 8)
+#define OA_DATA_FOOTER_RTSA_MASK    NO_OS_BIT(7)
+#define OA_DATA_FOOTER_RTSP_MASK    NO_OS_BIT(6)
 #define OA_DATA_FOOTER_TXC_MASK		NO_OS_GENMASK(5, 1)
 #define OA_DATA_FOOTER_P_MASK		NO_OS_BIT(0)
 
@@ -173,6 +188,22 @@ struct oa_tc6_frame_buffer {
 	uint8_t data[CONFIG_OA_CHUNK_BUFFER_SIZE];
 	enum oa_tc6_user_buffer_state state;
 	uint8_t vs;
+
+	bool frame_drop; /**< Frame should be dropped (is invalid). Rx Only */
+	bool rtsa;       /**< Timestamp added. Rx Only */
+	bool rtsp;       /**< Timestamp parity. Rx Only */
+};
+
+/**
+ * @brief Stores the status flags which are provided as part of the footer
+ * during data transfers. These flags will be latched by the driver and can be
+ * cleared by the user when reading.
+ */
+struct oa_tc6_flags {
+	bool flags_valid; /**< Indicates the flags are latched and valid */
+	bool exst;        /**< Latched high until cleared */
+	bool hdrb;        /**< Latched high until cleared */
+	bool sync;        /**< Instantaneous value */
 };
 
 /**
@@ -180,7 +211,7 @@ struct oa_tc6_frame_buffer {
  */
 struct oa_tc6_desc {
 	struct no_os_spi_desc *comm_desc;
-	uint8_t ctrl_chunks[12];
+	uint8_t ctrl_chunks[OA_SPI_CTRL_LEN];
 	uint8_t data_chunks[OA_SPI_BUFF_LEN];
 
 	struct oa_tc6_frame_buffer user_rx_frame_buffer[OA_RX_FRAME_BUFF_NUM];
@@ -191,6 +222,9 @@ struct oa_tc6_desc {
 
 	uint32_t ctrl_tx_credit;
 	uint32_t ctrl_rx_credit;
+
+	struct oa_tc6_flags	xfer_flags;
+	bool	 prote_spi;
 };
 
 /**
@@ -198,6 +232,9 @@ struct oa_tc6_desc {
  */
 struct oa_tc6_init_param {
 	struct no_os_spi_desc *comm_desc;
+
+	/* The OASPI device uses Protected SPI for control transactions */
+	bool prote_spi;
 };
 
 /* Read a register from the MAC device */
@@ -225,6 +262,9 @@ int oa_tc6_get_tx_frame(struct oa_tc6_desc *, struct oa_tc6_frame_buffer **);
 
 /* Mark the frame buffer as filled and ready for transmission */
 int oa_tc6_put_tx_frame(struct oa_tc6_desc *, struct oa_tc6_frame_buffer *);
+
+/* Gets the latched transfer flags, and optionally clears the latch */
+int oa_tc6_get_xfer_flags(struct oa_tc6_desc *, struct oa_tc6_flags *, bool);
 
 /*
  * Transmit all the frames in the OA_BUFF_TX_READY state and receive the

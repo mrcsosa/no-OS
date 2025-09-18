@@ -95,6 +95,11 @@ static void oa_tc6_prepare_tx_ctrl(struct oa_tc6_desc *desc, uint32_t addr,
 	no_os_put_unaligned_be32(header, desc->ctrl_chunks);
 	no_os_put_unaligned_be32(val, &desc->ctrl_chunks[OA_HEADER_LEN]);
 
+	if (desc->prote_spi) {
+		no_os_put_unaligned_be32(val ^ NO_OS_GENMASK(31, 0),
+					 &desc->ctrl_chunks[OA_HEADER_LEN + OA_REG_LEN]);
+	}
+
 	desc->ctrl_tx_credit++;
 }
 
@@ -107,6 +112,7 @@ static void oa_tc6_prepare_tx_ctrl(struct oa_tc6_desc *desc, uint32_t addr,
  */
 int oa_tc6_reg_read(struct oa_tc6_desc *desc, uint32_t addr, uint32_t *val)
 {
+	uint32_t comp_val;
 	int ret;
 
 	if (!desc)
@@ -119,6 +125,12 @@ int oa_tc6_reg_read(struct oa_tc6_desc *desc, uint32_t addr, uint32_t *val)
 
 	*val = no_os_get_unaligned_be32(&desc->ctrl_chunks[2 * OA_HEADER_LEN]);
 	desc->ctrl_rx_credit = 0;
+
+	if (desc->prote_spi) {
+		comp_val = no_os_get_unaligned_be32(&desc->ctrl_chunks[3 * OA_HEADER_LEN]);
+		if (*val != (comp_val ^ NO_OS_GENMASK(31, 0)))
+			return -EINVAL;
+	}
 
 	return 0;
 }
@@ -411,16 +423,17 @@ static int oa_tc6_tx_frame_to_chunks(struct oa_tc6_desc *desc,
 		frame_buffer->state = OA_BUFF_FREE;
 	} while (1);
 
-	if (rx_nchunks > chunks_written) {
-		/*
-		 * The TX queue may be empty, there is no space in the SPI buffer, or we're out of tx credits.
-		 * If rx_chunks > tx_chunks, we need to add dummy chunks (DV = 0).
-		 */
+	/*
+	 * The TX queue may be empty, there is no space in the SPI buffer,
+	 * or we're out of tx credits.
+	 * If rx_chunks > tx_chunks, we need to add dummy chunks (DV = 0) as long
+	 * as there is enough room in the buffer.
+	 */
+	while ((rx_nchunks > chunks_written) && (chunks_written < chunks_limit)) {
 		header = no_os_field_prep(OA_DATA_HEADER_DNC_MASK, 1);
-		for (i = 0; i < rx_nchunks - chunks_written; i++) {
-			no_os_put_unaligned_be32(header, &tx_buffer[spi_buffer_index]);
-			spi_buffer_index += OA_CHUNK_SIZE + OA_HEADER_LEN;
-		}
+		no_os_put_unaligned_be32(header, &tx_buffer[spi_buffer_index]);
+		spi_buffer_index += OA_CHUNK_SIZE + OA_HEADER_LEN;
+		chunks_written++;
 	}
 
 	*tx_written = spi_buffer_index;
@@ -439,7 +452,7 @@ static int oa_tc6_rx_chunk_to_frame(struct oa_tc6_desc *desc, uint8_t *chunks,
 				    uint32_t len)
 {
 	uint32_t footer = 0;
-	uint32_t swo;
+	uint32_t sbo;
 	uint32_t ebo;
 	uint32_t ev;
 	uint32_t sv;
@@ -454,37 +467,75 @@ static int oa_tc6_rx_chunk_to_frame(struct oa_tc6_desc *desc, uint8_t *chunks,
 	for (uint32_t i = 0; i < len; i++) {
 		footer = no_os_get_unaligned_be32(&chunks[OA_CHUNK_SIZE]);
 
+		ev = footer & OA_DATA_FOOTER_EV_MASK;
+		sv = footer & OA_DATA_FOOTER_SV_MASK;
+		ebo = no_os_field_get(OA_DATA_FOOTER_EBO_MASK, footer);
+
+		/*
+		 * The footer contains an SWO (Start WORD offset). Convert to a start
+		 * BYTE offset to be used directly in buffer access and math
+		 */
+		sbo = no_os_field_get(OA_DATA_FOOTER_SWO_MASK, footer) * 4;
+
+		/* Always update the transfer flags, even if DV=0 */
+		desc->xfer_flags.flags_valid = true;
+		desc->xfer_flags.exst |= !!(footer & OA_DATA_FOOTER_EXST_MASK); /* Latched */
+		desc->xfer_flags.hdrb |= !!(footer & OA_DATA_FOOTER_HDRB_MASK); /* Latched */
+		desc->xfer_flags.sync = !!(footer &
+					   OA_DATA_FOOTER_SYNC_MASK);  /* Instantaneous */
+
 		if (!(footer & OA_DATA_FOOTER_DV_MASK)) {
 			chunks += OA_CHUNK_SIZE + OA_FOOTER_LEN;
 			continue;
 		}
 
-		ev = footer & OA_DATA_FOOTER_EV_MASK;
-		sv = footer & OA_DATA_FOOTER_SV_MASK;
-
 		if (sv && ev) {
-			ebo = no_os_field_get(OA_DATA_FOOTER_EBO_MASK, footer);
-			swo = no_os_field_get(OA_DATA_FOOTER_SWO_MASK, footer);
-
-			if (swo < ebo) {
-				memcpy(&(frame_buffer->data[frame_buffer->index]), chunks, ebo - swo + 1);
-				frame_buffer->index += ebo - swo + 1;
+			if (sbo > ebo) {
+				/* There are 2 frames in the current chunk. Finish the existing. */
+				memcpy(&(frame_buffer->data[frame_buffer->index]), chunks, ebo + 1);
+				frame_buffer->index += ebo + 1;
 				frame_buffer->len = frame_buffer->index;
 				frame_buffer->state = OA_BUFF_RX_COMPLETE;
-				frame_buffer->vs = no_os_field_get(OA_DATA_FOOTER_VS_MASK, footer);
+
+				/* Flags valid when EV=1 Only */
+				frame_buffer->frame_drop = !!(footer & OA_DATA_FOOTER_FD_MASK);
+				frame_buffer->rtsa = !!(footer & OA_DATA_FOOTER_RTSA_MASK);
+				frame_buffer->rtsp = !!(footer & OA_DATA_FOOTER_RTSP_MASK);
+
+				/* Now get a new buffer for the second frame */
+				ret = oa_tc6_get_empty_rx_buff(desc, &frame_buffer, true);
+				if (ret)
+					return ret;
+
+				/*
+				 * Overwrite the EBO to be the end of the chunk so the next
+				 * block of code is generic
+				 */
+				ebo = OA_CHUNK_SIZE - 1;
+
+				/* Next frame will be in progress */
+				frame_buffer->state = OA_BUFF_RX_IN_PROGRESS;
+			} else {
+				/* A single frame in current chunk. It will be completed */
+				frame_buffer->state = OA_BUFF_RX_COMPLETE;
 			}
 
-			ret = oa_tc6_get_empty_rx_buff(desc, &frame_buffer, true);
-			if (ret) {
-				printf("No empty buffer\n");
-				return ret;
-			}
+			/*
+			 * At this point it is either a single frame encapsulated in the
+			 * chunk, or the start of the 2nd Frame. EBO should be set
+			 * accordingly above.
+			 */
+			memcpy(&frame_buffer->data[frame_buffer->index], &chunks[sbo],
+			       ebo - sbo + 1);
+			frame_buffer->index += ebo - sbo + 1;
+			frame_buffer->len = frame_buffer->index;
+			frame_buffer->vs = no_os_field_get(OA_DATA_FOOTER_VS_MASK, footer);
 
-			frame_buffer->state = OA_BUFF_RX_IN_PROGRESS;
-			/* There are 2 frames in the current chunk */
-			if (swo > ebo) {
-				memcpy(frame_buffer->data, &chunks[swo], OA_CHUNK_SIZE - swo);
-				frame_buffer->index += OA_CHUNK_SIZE - swo;
+			if (frame_buffer->state == OA_BUFF_RX_COMPLETE) {
+				/* Get a new buffer for the next iteration */
+				ret = oa_tc6_get_empty_rx_buff(desc, &frame_buffer, true);
+				if (ret)
+					return ret;
 			}
 
 			chunks += OA_CHUNK_SIZE + OA_FOOTER_LEN;
@@ -496,11 +547,15 @@ static int oa_tc6_rx_chunk_to_frame(struct oa_tc6_desc *desc, uint8_t *chunks,
 
 			/* The current chunk may be shorter than chunk_size, since it contains the end of a frame */
 			memcpy(&(frame_buffer->data[frame_buffer->index]), chunks, ebo + 1);
-
 			frame_buffer->len = frame_buffer->index + ebo + 1;
 			frame_buffer->state = OA_BUFF_RX_COMPLETE;
-			frame_buffer->vs = no_os_field_get(OA_DATA_FOOTER_VS_MASK, footer);
 
+			/* Flags valid when EV=1 Only */
+			frame_buffer->frame_drop = !!(footer & OA_DATA_FOOTER_FD_MASK);
+			frame_buffer->rtsa = !!(footer & OA_DATA_FOOTER_RTSA_MASK);
+			frame_buffer->rtsp = !!(footer & OA_DATA_FOOTER_RTSP_MASK);
+
+			/* Get a new buffer for the next iteration */
 			ret = oa_tc6_get_empty_rx_buff(desc, &frame_buffer, true);
 			if (ret)
 				return ret;
@@ -512,25 +567,26 @@ static int oa_tc6_rx_chunk_to_frame(struct oa_tc6_desc *desc, uint8_t *chunks,
 		}
 
 		if (sv) {
-			swo = no_os_field_get(OA_DATA_FOOTER_SWO_MASK, footer);
 			/* The current chunk contains the start of a frame at offset SWO */
-			memcpy(&frame_buffer->data[frame_buffer->index], &chunks[swo],
-			       OA_CHUNK_SIZE - swo);
+			memcpy(&frame_buffer->data[frame_buffer->index], &chunks[sbo],
+			       OA_CHUNK_SIZE - sbo);
 
-			frame_buffer->index += OA_CHUNK_SIZE - swo;
+			frame_buffer->index += OA_CHUNK_SIZE - sbo;
 			frame_buffer->len = frame_buffer->index;
-
+			frame_buffer->state = OA_BUFF_RX_IN_PROGRESS;
+			frame_buffer->vs = no_os_field_get(OA_DATA_FOOTER_VS_MASK, footer);
 			chunks += OA_CHUNK_SIZE + OA_FOOTER_LEN;
 			continue;
 		}
 
-		if (!ev && !sv) {
+		if ((!ev && !sv) && (frame_buffer->state == OA_BUFF_RX_IN_PROGRESS)) {
 			/*
 			 * The current chunk does not contain either the start or end of a frame,
 			 * and the contains valid data for each byte
 			 */
 			memcpy(&frame_buffer->data[frame_buffer->index], chunks, OA_CHUNK_SIZE);
 			frame_buffer->index += OA_CHUNK_SIZE;
+			frame_buffer->len = frame_buffer->index;
 		}
 
 		chunks += OA_CHUNK_SIZE + OA_FOOTER_LEN;
@@ -563,6 +619,28 @@ static int oa_tc6_update_stats(struct oa_tc6_desc *desc)
 }
 
 /**
+ * @brief Gets the latched transfer flags that are read from the data chunk
+ * footer. Optionally clears the latched values
+ * @param desc - the OA TC6 descriptor
+ * @param flags - Storage location for flag values
+ * @param clear - If set, clears the latch and valid
+ * @return 0 in case of success, negative error code otherwise
+ */
+int oa_tc6_get_xfer_flags(struct oa_tc6_desc *desc, struct oa_tc6_flags *flags,
+			  bool clear)
+{
+	if (!desc || !flags)
+		return -EINVAL;
+
+	memcpy(flags, &desc->xfer_flags, sizeof(struct oa_tc6_flags));
+
+	if (clear)
+		memset(&desc->xfer_flags, 0, sizeof(struct oa_tc6_flags));
+
+	return 0;
+}
+
+/**
  * @brief Transmit all the frames in the OA_BUFF_TX_READY state and receive the
  * frames in the OA_BUFF_RX_COMPLETE state.
  * @param desc - the OA TC6 descriptor
@@ -582,7 +660,11 @@ int oa_tc6_thread(struct oa_tc6_desc *desc)
 		xfer.tx_buff = desc->ctrl_chunks;
 		xfer.rx_buff = desc->ctrl_chunks;
 		xfer.cs_change = 1;
-		xfer.bytes_number = 2 * OA_HEADER_LEN + OA_REG_LEN;
+
+		if (desc->prote_spi)
+			xfer.bytes_number = 2 * (OA_HEADER_LEN + OA_REG_LEN);
+		else
+			xfer.bytes_number = 2 * OA_HEADER_LEN + OA_REG_LEN;
 
 		return no_os_spi_transfer(desc->comm_desc, &xfer, 1);
 	}
@@ -625,7 +707,7 @@ int oa_tc6_thread(struct oa_tc6_desc *desc)
 
 		rx_limit++;
 
-		if (rx_limit > 5)
+		if (rx_limit > CONFIG_OA_THREAD_RX_LIMIT)
 			break;
 	}
 
@@ -641,29 +723,29 @@ int oa_tc6_thread(struct oa_tc6_desc *desc)
 int oa_tc6_init(struct oa_tc6_desc **desc, struct oa_tc6_init_param *param)
 {
 	struct oa_tc6_desc *descriptor;
-	int ret;
 
 	descriptor = no_os_calloc(1, sizeof(*descriptor));
 	if (!descriptor)
 		return -ENOMEM;
 
 	descriptor->comm_desc = param->comm_desc;
+	descriptor->prote_spi = param->prote_spi;
 
+#if CONFIG_OA_ZERO_SWO_ONLY
 	/* For now, we'll only support receiving frames with SWO = 0 */
-	ret = oa_tc6_reg_update(descriptor, OA_TC6_CONFIG0_REG,
-				OA_TC6_CONFIG0_ZARFE_MASK,
-				OA_TC6_CONFIG0_ZARFE_MASK);
-	if (ret)
-		goto error;
+	int ret = oa_tc6_reg_update(descriptor, OA_TC6_CONFIG0_REG,
+				    OA_TC6_CONFIG0_ZARFE_MASK,
+				    OA_TC6_CONFIG0_ZARFE_MASK);
+	if (ret) {
+		no_os_free(descriptor);
+
+		return ret;
+	}
+#endif
 
 	*desc = descriptor;
 
 	return 0;
-
-error:
-	no_os_free(descriptor);
-
-	return ret;
 }
 
 /**
